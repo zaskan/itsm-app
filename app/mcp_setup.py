@@ -84,10 +84,21 @@ def build_mcp() -> FastMCP:
             return json.dumps({"error": str(e)})
         return json.dumps(snap, indent=2)
 
-    @mcp.tool(name="close_incident", description="Close an incident.")
-    def close_incident(incident_ref: str, actor_user_id: int = 1) -> str:
+    @mcp.tool(
+        name="close_incident",
+        description="Close an incident; optionally link a KB article as the resolution record.",
+    )
+    def close_incident(
+        incident_ref: str,
+        actor_user_id: int = 1,
+        kb_article_id: int | None = None,
+    ) -> str:
         try:
-            snap = inc_svc.close_incident(incident_ref, actor_user_id)
+            snap = inc_svc.close_incident(
+                incident_ref,
+                actor_user_id,
+                resolution_kb_article_id=kb_article_id,
+            )
         except ValueError as e:
             return json.dumps({"error": str(e)})
         return json.dumps(snap, indent=2)

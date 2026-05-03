@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, status
 
 from app import schemas
 from app.auth_deps import (
@@ -166,9 +166,15 @@ def api_close(
     background_tasks: BackgroundTasks,
     user: Annotated[dict, Depends(get_current_user_basic)],
     incident_ref: str,
+    body: schemas.IncidentClose | None = Body(None),
 ) -> dict:
+    kid = body.kb_article_id if body else None
     try:
-        snap_full = inc_svc.close_incident(incident_ref, user["id"])
+        snap_full = inc_svc.close_incident(
+            incident_ref,
+            user["id"],
+            resolution_kb_article_id=kid,
+        )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     wh_svc.schedule_incident_webhook(
@@ -321,7 +327,7 @@ def api_asset_types_list(user: Annotated[dict, Depends(get_current_user_basic)])
 
 @router.post("/asset-types", response_model=schemas.AssetTypeOut, status_code=status.HTTP_201_CREATED)
 def api_asset_types_create(
-    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+    user: Annotated[dict, Depends(get_current_user_basic)],
     body: schemas.AssetTypeCreate,
 ) -> dict:
     del user
@@ -333,7 +339,7 @@ def api_asset_types_create(
 
 @router.patch("/asset-types/{type_id}", response_model=schemas.AssetTypeOut)
 def api_asset_types_patch(
-    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+    user: Annotated[dict, Depends(get_current_user_basic)],
     type_id: int,
     body: schemas.AssetTypeUpdate,
 ) -> dict:
@@ -346,7 +352,7 @@ def api_asset_types_patch(
 
 @router.delete("/asset-types/{type_id}", status_code=status.HTTP_204_NO_CONTENT)
 def api_asset_types_delete(
-    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+    user: Annotated[dict, Depends(get_current_user_basic)],
     type_id: int,
 ) -> None:
     del user

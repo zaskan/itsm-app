@@ -54,6 +54,7 @@
         <th class="px-4 py-3 font-medium">Status</th>
         <th class="px-4 py-3 font-medium">Incident</th>
         <th class="px-4 py-3 font-medium">Asset</th>
+        <th class="px-4 py-3 font-medium">Resolution (KB)</th>
         <th class="px-4 py-3 font-medium">Created</th>
         <th class="px-4 py-3 font-medium">ID</th>
       </tr>
@@ -73,9 +74,15 @@
         </td>
         <td class="px-4 py-4">
           {% if row.status == 'open' %}
-          <span class="text-slate-700">&#9679; Open</span>
+          <span class="inline-flex items-center gap-1.5 text-slate-700">
+            <svg class="w-2 h-2 shrink-0 text-emerald-500" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor" /></svg>
+            Open
+          </span>
           {% else %}
-          <span class="text-slate-500">&#9675; Closed</span>
+          <span class="inline-flex items-center gap-1.5 text-slate-500">
+            <svg class="w-2 h-2 shrink-0 text-slate-400" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="3" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+            Closed
+          </span>
           {% endif %}
         </td>
         <td class="px-4 py-4">
@@ -93,6 +100,13 @@
           <span class="text-slate-400">—</span>
           {% endif %}
         </td>
+        <td class="px-4 py-4 text-xs text-slate-600 max-w-[180px] truncate" title="{{ row.resolution_kb_title or '' }}">
+          {% if row.resolution_kb_title %}
+          <span class="line-clamp-2">{{ row.resolution_kb_title }}</span>
+          {% else %}
+          <span class="text-slate-400">—</span>
+          {% endif %}
+        </td>
         <td class="px-4 py-4 text-slate-600 text-xs">
           <div data-relative="{{ row.created_at }}">{{ row.created_at }}</div>
           <div class="text-slate-400">{{ row.created_at }}</div>
@@ -101,7 +115,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="6" class="px-4 py-12 text-center text-slate-500">No incidents match your filters.</td>
+        <td colspan="7" class="px-4 py-12 text-center text-slate-500">No incidents match your filters.</td>
       </tr>
       {% endfor %}
     </tbody>

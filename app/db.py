@@ -40,6 +40,14 @@ _SCHEMA_SQL = """
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS kb_articles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS incidents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 public_id TEXT NOT NULL UNIQUE,
@@ -50,7 +58,8 @@ _SCHEMA_SQL = """
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 closed_at TEXT,
-                inventory_asset_id INTEGER REFERENCES inventory_assets(id)
+                inventory_asset_id INTEGER REFERENCES inventory_assets(id),
+                resolution_kb_article_id INTEGER REFERENCES kb_articles(id) ON DELETE SET NULL
             );
 
             CREATE TABLE IF NOT EXISTS comments (
@@ -68,14 +77,6 @@ _SCHEMA_SQL = """
                 payload TEXT NOT NULL DEFAULT '{}',
                 actor_user_id INTEGER NOT NULL REFERENCES users(id),
                 created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS kb_articles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -149,6 +150,14 @@ def _migrate_legacy_schema() -> None:
                 """
                 ALTER TABLE incidents ADD COLUMN inventory_asset_id INTEGER
                 REFERENCES inventory_assets(id)
+                """
+            )
+        cols = _table_columns(cur, "incidents")
+        if cols and "resolution_kb_article_id" not in cols:
+            cur.execute(
+                """
+                ALTER TABLE incidents ADD COLUMN resolution_kb_article_id INTEGER
+                REFERENCES kb_articles(id) ON DELETE SET NULL
                 """
             )
 

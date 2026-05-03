@@ -200,10 +200,17 @@ def incident_detail_fragment(
     if not d:
         raise HTTPException(404, "Not found")
     inventory_rows = inv_svc.list_inventory()
+    kb_articles = kb_svc.list_articles()
     return templates.TemplateResponse(
         request,
         "incident_detail_fragment.html",
-        _page(request, user, incident=d, inventory_items=inventory_rows),
+        _page(
+            request,
+            user,
+            incident=d,
+            inventory_items=inventory_rows,
+            kb_articles=kb_articles,
+        ),
     )
 
 
@@ -286,12 +293,23 @@ def incident_close(
     request: Request,
     background_tasks: BackgroundTasks,
     incident_ref: str,
+    kb_article_id: str = Form(""),
 ) -> RedirectResponse:
     me = get_session_user(request)
     if not me:
         raise login_redirect()
+    kid: int | None = None
+    raw = kb_article_id.strip()
+    if raw.isdigit():
+        kid = int(raw)
+    elif raw != "":
+        raise HTTPException(400, "Invalid KB article selection")
     try:
-        snap = inc_svc.close_incident(incident_ref, me["id"])
+        snap = inc_svc.close_incident(
+            incident_ref,
+            me["id"],
+            resolution_kb_article_id=kid,
+        )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     wh_svc.schedule_incident_webhook(
@@ -436,7 +454,9 @@ def users_delete(request: Request, user_id: int) -> RedirectResponse:
 
 @router.get("/asset-types", response_class=HTMLResponse)
 def asset_types_page(request: Request) -> HTMLResponse:
-    user = require_admin_session(request)
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
     rows = at_svc.list_types()
     return templates.TemplateResponse(
         request,
@@ -451,7 +471,8 @@ def asset_types_new(
     name: str = Form(...),
     description: str = Form(""),
 ) -> RedirectResponse:
-    require_admin_session(request)
+    if not get_session_user(request):
+        raise login_redirect()
     try:
         at_svc.create_type(name, description)
     except Exception:
@@ -466,14 +487,16 @@ def asset_types_edit(
     name: str = Form(...),
     description: str = Form(""),
 ) -> RedirectResponse:
-    require_admin_session(request)
+    if not get_session_user(request):
+        raise login_redirect()
     at_svc.update_type(type_id, name, description)
     return RedirectResponse("/asset-types", status_code=303)
 
 
 @router.post("/asset-types/{type_id}/delete")
 def asset_types_delete(request: Request, type_id: int) -> RedirectResponse:
-    require_admin_session(request)
+    if not get_session_user(request):
+        raise login_redirect()
     try:
         at_svc.delete_type(type_id)
     except Exception:

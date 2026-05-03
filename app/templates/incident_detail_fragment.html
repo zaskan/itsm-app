@@ -10,6 +10,27 @@
     <p class="mt-3 text-slate-700 text-sm whitespace-pre-wrap">{{ incident.description }}</p>
   </div>
 
+  {% if incident.status == 'closed' %}
+  <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-2">
+    <h3 class="text-sm font-semibold text-slate-800">Resolution &amp; SLA</h3>
+    {% if incident.resolution_duration_label %}
+    <p class="text-sm text-slate-700">Resolution time: <span class="font-medium text-slate-900">{{ incident.resolution_duration_label }}</span></p>
+    <p class="text-sm text-slate-600">SLA target ({{ incident.severity | capitalize }}): {{ incident.sla_target_label }}</p>
+    <div class="flex flex-wrap items-center gap-2 pt-1">
+      {% if incident.sla_compliant is sameas true %}
+      <span class="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">Within SLA</span>
+      {% elif incident.sla_compliant is sameas false %}
+      <span class="inline-flex rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800">SLA breached</span>
+      {% else %}
+      <span class="inline-flex rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-semibold text-slate-700">SLA unknown</span>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="text-sm text-slate-500">Resolution timing could not be computed from timestamps.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if incident.status == 'open' %}
   <div class="border-t border-slate-200 pt-4">
     <label class="text-sm font-medium text-slate-700">Linked inventory</label>
@@ -40,6 +61,13 @@
   </div>
   {% endif %}
 
+  {% if incident.status == 'closed' and incident.resolution_kb_article %}
+  <div class="border-t border-slate-200 pt-4 text-sm text-slate-600">
+    <span class="font-medium text-slate-800">Resolution (KB):</span>
+    {{ incident.resolution_kb_article.title }}
+  </div>
+  {% endif %}
+
   {% if incident.status == 'open' %}
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-200 pt-4">
     <form method="post" action="/incidents/{{ incident.public_id }}/severity" class="flex flex-col gap-2">
@@ -53,9 +81,16 @@
         <button type="submit" class="rounded-lg bg-slate-800 text-white px-3 py-2 text-sm">Update</button>
       </div>
     </form>
-    <form method="post" action="/incidents/{{ incident.public_id }}/close" onsubmit="return confirm('Close this ticket?');">
+    <form method="post" action="/incidents/{{ incident.public_id }}/close" class="flex flex-col gap-2" onsubmit="return confirm('Close this ticket?');">
       <label class="text-sm font-medium text-slate-700">Close ticket</label>
-      <button type="submit" class="mt-2 w-full sm:w-auto rounded-lg border border-red-200 bg-red-50 text-red-800 px-4 py-2 text-sm font-medium">
+      <label class="text-xs text-slate-500">Link resolution to KB (optional)</label>
+      <select name="kb_article_id" class="rounded-lg border border-slate-300 px-3 py-2 text-sm w-full">
+        <option value="">— None —</option>
+        {% for a in kb_articles %}
+        <option value="{{ a.id }}">{{ a.title }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="w-full sm:w-auto rounded-lg border border-red-200 bg-red-50 text-red-800 px-4 py-2 text-sm font-medium self-start">
         Close ticket
       </button>
     </form>

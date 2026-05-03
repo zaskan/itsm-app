@@ -24,6 +24,10 @@ class IncidentPatch(BaseModel):
     inventory_asset_id: int | None = None
 
 
+class IncidentClose(BaseModel):
+    kb_article_id: int | None = None
+
+
 class CommentCreate(BaseModel):
     body: str = Field(..., min_length=1, max_length=10000)
 
@@ -93,6 +97,8 @@ class IncidentOut(BaseModel):
     updated_at: str
     closed_at: str | None = None
     inventory_asset_id: int | None = None
+    resolution_kb_article_id: int | None = None
+    resolution_kb_title: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
