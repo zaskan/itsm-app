@@ -57,6 +57,22 @@ def login_redirect() -> HTTPException:
     return HTTPException(status_code=302, headers={"Location": "/login"})
 
 
+def require_role_admin(user: dict) -> None:
+    if user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator role required",
+        )
+
+
+def require_admin_session(request: Request) -> dict:
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
+    require_role_admin(user)
+    return user
+
+
 async def get_current_user_basic(
     creds: Annotated[HTTPBasicCredentials | None, Depends(security)],
 ) -> dict:
@@ -73,6 +89,13 @@ async def get_current_user_basic(
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
+    return user
+
+
+async def get_current_user_basic_admin(
+    user: Annotated[dict, Depends(get_current_user_basic)],
+) -> dict:
+    require_role_admin(user)
     return user
 
 

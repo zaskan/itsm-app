@@ -33,8 +33,6 @@ spec:
             - name: http
               containerPort: 8000
           env:
-            - name: ITSM_CONFIG
-              value: /etc/itsm/users.yaml
             - name: ITSM_DATABASE
               value: /data/itsm.db
             - name: SESSION_SECRET
@@ -47,10 +45,20 @@ spec:
                 secretKeyRef:
                   name: itsm-secrets
                   key: mcp-token
+            # Used only when the SQLite file has zero users (first pod start with emptyDir).
+            - name: ITSM_BOOTSTRAP_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: itsm-secrets
+                  key: bootstrap-admin-user
+                  optional: true
+            - name: ITSM_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: itsm-secrets
+                  key: bootstrap-admin-password
+                  optional: true
           volumeMounts:
-            - name: users-config
-              mountPath: /etc/itsm
-              readOnly: true
             - name: sqlite-data
               mountPath: /data
           readinessProbe:
@@ -73,8 +81,5 @@ spec:
               cpu: "500m"
               memory: "512Mi"
       volumes:
-        - name: users-config
-          configMap:
-            name: itsm-users-config
         - name: sqlite-data
           emptyDir: {}

@@ -8,14 +8,19 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from app.services import asset_types as at_svc
 from app.services import incidents as inc_svc
+from app.services import inventory as inv_svc
 from app.services import kb as kb_svc
 
 
 def build_mcp() -> FastMCP:
     mcp = FastMCP(
         "ITSM Demo",
-        instructions="Tools for ITSM incidents and knowledge base (demo).",
+        instructions=(
+            "Tools for ITSM incidents, knowledge base, asset types, and inventory (demo). "
+            "MCP has no per-user auth; mirror REST credentials when auditing matters."
+        ),
         stateless_http=True,
         json_response=True,
         streamable_http_path="/",
@@ -39,20 +44,28 @@ def build_mcp() -> FastMCP:
             return json.dumps({"error": "not_found"})
         return json.dumps(d, indent=2)
 
-    @mcp.tool(name="create_incident", description="Create an incident (system user context — prefer REST with credentials for audit).")
+    @mcp.tool(
+        name="create_incident",
+        description="Create an incident (system user context — prefer REST with credentials for audit).",
+    )
     def create_incident(
         title: str,
         description: str = "",
         severity: str = "medium",
         actor_user_id: int = 1,
+        inventory_asset_id: int | None = None,
     ) -> str:
-        snap = inc_svc.create_incident(
-            title=title,
-            description=description,
-            severity=severity,
-            actor_user_id=actor_user_id,
-            created_at=None,
-        )
+        try:
+            snap = inc_svc.create_incident(
+                title=title,
+                description=description,
+                severity=severity,
+                actor_user_id=actor_user_id,
+                created_at=None,
+                inventory_asset_id=inventory_asset_id,
+            )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
         return json.dumps(snap, indent=2)
 
     @mcp.tool(name="add_comment", description="Add a comment to an open incident.")
@@ -96,6 +109,84 @@ def build_mcp() -> FastMCP:
             return json.dumps({"error": "not_found"})
         return json.dumps(art, indent=2)
 
+    @mcp.tool(name="list_asset_types", description="List all asset type definitions.")
+    def list_asset_types() -> str:
+        return json.dumps(at_svc.list_types(), indent=2)
+
+    @mcp.tool(name="create_asset_type", description="Create an asset type (name must be unique).")
+    def create_asset_type(name: str, description: str = "") -> str:
+        try:
+            row = at_svc.create_type(name, description)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+        return json.dumps(row, indent=2)
+
+    @mcp.tool(name="update_asset_type", description="Update an asset type by id.")
+    def update_asset_type(type_id: int, name: str | None = None, description: str | None = None) -> str:
+        row = at_svc.update_type(type_id, name, description)
+        if not row:
+            return json.dumps({"error": "not_found"})
+        return json.dumps(row, indent=2)
+
+    @mcp.tool(name="delete_asset_type", description="Delete an asset type by id.")
+    def delete_asset_type(type_id: int) -> str:
+        try:
+            ok = at_svc.delete_type(type_id)
+        except Exception as e:
+            return json.dumps({"error": str(e), "deleted": False})
+        return json.dumps({"deleted": ok})
+
+    @mcp.tool(name="list_inventory", description="List inventory assets; optional search substring.")
+    def list_inventory(query: str | None = None) -> str:
+        return json.dumps(inv_svc.list_inventory(q=query), indent=2)
+
+    @mcp.tool(name="get_inventory_item", description="Get one inventory row by id.")
+    def get_inventory_item(item_id: int) -> str:
+        row = inv_svc.get_item(item_id)
+        if not row:
+            return json.dumps({"error": "not_found"})
+        return json.dumps(row, indent=2)
+
+    @mcp.tool(name="create_inventory_item", description="Create an inventory asset.")
+    def create_inventory_item(
+        asset_type_id: int,
+        hostname: str,
+        ip_address: str = "",
+        group_name: str = "",
+    ) -> str:
+        try:
+            row = inv_svc.create_item(asset_type_id, hostname, ip_address, group_name)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+        return json.dumps(row, indent=2)
+
+    @mcp.tool(name="update_inventory_item", description="Update fields on an inventory asset.")
+    def update_inventory_item(
+        item_id: int,
+        asset_type_id: int | None = None,
+        hostname: str | None = None,
+        ip_address: str | None = None,
+        group_name: str | None = None,
+    ) -> str:
+        row = inv_svc.update_item(
+            item_id,
+            asset_type_id=asset_type_id,
+            hostname=hostname,
+            ip_address=ip_address,
+            group_name=group_name,
+        )
+        if not row:
+            return json.dumps({"error": "not_found"})
+        return json.dumps(row, indent=2)
+
+    @mcp.tool(name="delete_inventory_item", description="Delete an inventory asset by id.")
+    def delete_inventory_item(item_id: int) -> str:
+        try:
+            ok = inv_svc.delete_item(item_id)
+        except Exception as e:
+            return json.dumps({"error": str(e), "deleted": False})
+        return json.dumps({"deleted": ok})
+
     @mcp.resource("kb://catalog")
     def kb_catalog() -> str:
         rows = kb_svc.list_articles()
@@ -107,6 +198,17 @@ def build_mcp() -> FastMCP:
         if not art:
             return json.dumps({"error": "not_found"})
         return json.dumps(art, indent=2)
+
+    @mcp.resource("inventory://catalog")
+    def inventory_catalog() -> str:
+        return json.dumps(inv_svc.list_inventory(), indent=2)
+
+    @mcp.resource("inventory://item/{item_id}")
+    def inventory_item_resource(item_id: int) -> str:
+        row = inv_svc.get_item(item_id)
+        if not row:
+            return json.dumps({"error": "not_found"})
+        return json.dumps(row, indent=2)
 
     return mcp
 

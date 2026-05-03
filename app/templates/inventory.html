@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% set active_nav = 'inventory' %}
+{% block title %}Inventory — {{ app_title }}{% endblock %}
+{% block page_heading %}Inventory{% endblock %}
+
+{% block header_actions %}
+<button type="button" onclick="document.getElementById('new-item').classList.remove('hidden')"
+  class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-hover">
+  + New item
+</button>
+{% endblock %}
+
+{% block content %}
+{% if request.query_params.get('error') == '1' %}
+<p class="text-sm text-red-600 mb-4">Could not create item (check fields and asset type).</p>
+{% elif request.query_params.get('error') == 'fk' %}
+<p class="text-sm text-red-600 mb-4">Cannot delete: one or more incidents still reference this asset.</p>
+{% endif %}
+
+<form method="get" action="/inventory" class="mb-6 flex gap-2 max-w-md">
+  <input type="search" name="q" value="{{ q }}" placeholder="Hostname, IP, or group…" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+  <button type="submit" class="rounded-lg bg-slate-700 text-white px-4 py-2 text-sm">Search</button>
+</form>
+
+<div id="new-item" class="hidden mb-6 p-4 bg-white rounded-xl border border-slate-200 max-w-xl">
+  <h3 class="text-sm font-semibold text-slate-800 mb-3">New inventory item</h3>
+  <form method="post" action="/inventory/new" class="grid sm:grid-cols-2 gap-3">
+    <div class="sm:col-span-2">
+      <label class="text-sm text-slate-700">Asset type</label>
+      <select name="asset_type_id" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        {% for t in asset_types %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="text-sm text-slate-700">Hostname</label>
+      <input name="hostname" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+    </div>
+    <div>
+      <label class="text-sm text-slate-700">IP address</label>
+      <input name="ip_address" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+    </div>
+    <div class="sm:col-span-2">
+      <label class="text-sm text-slate-700">Group</label>
+      <input name="group_name" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+    </div>
+    <div class="sm:col-span-2 flex gap-2 pt-1">
+      <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Create</button>
+      <button type="button" class="text-sm text-slate-600" onclick="document.getElementById('new-item').classList.add('hidden')">Cancel</button>
+    </div>
+  </form>
+</div>
+
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-600 border-b">
+      <tr>
+        <th class="px-4 py-3 text-left">Hostname</th>
+        <th class="px-4 py-3 text-left">Type</th>
+        <th class="px-4 py-3 text-left">IP</th>
+        <th class="px-4 py-3 text-left">Group</th>
+        <th class="px-4 py-3 text-left w-32"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for it in items %}
+      <tr class="align-top">
+        <td class="px-4 py-4" colspan="5">
+          <form method="post" action="/inventory/{{ it.id }}/edit" class="grid sm:grid-cols-12 gap-2 items-end">
+            <div class="sm:col-span-3">
+              <label class="text-xs text-slate-500">Hostname</label>
+              <input name="hostname" value="{{ it.hostname }}" required class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+            </div>
+            <div class="sm:col-span-3">
+              <label class="text-xs text-slate-500">Type</label>
+              <select name="asset_type_id" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
+                {% for t in asset_types %}
+                <option value="{{ t.id }}" {% if t.id == it.asset_type_id %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="text-xs text-slate-500">IP</label>
+              <input name="ip_address" value="{{ it.ip_address }}" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="text-xs text-slate-500">Group</label>
+              <input name="group_name" value="{{ it.group_name }}" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+            </div>
+            <div class="sm:col-span-2 flex flex-col gap-1">
+              <button type="submit" class="rounded bg-slate-800 text-white px-3 py-1.5 text-xs">Save</button>
+            </div>
+          </form>
+          <form method="post" action="/inventory/{{ it.id }}/delete" class="mt-2" onsubmit="return confirm('Remove this asset from inventory?');">
+            <button type="submit" class="text-xs text-red-600 hover:underline">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="px-4 py-10 text-center text-slate-500">No items yet.{% if not asset_types %} Create an asset type first.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

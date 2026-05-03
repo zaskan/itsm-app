@@ -16,10 +16,12 @@ class IncidentCreate(BaseModel):
     description: str = ""
     severity: Severity = "medium"
     created_at: datetime | None = None
+    inventory_asset_id: int | None = None
 
 
 class IncidentPatch(BaseModel):
     severity: Severity | None = None
+    inventory_asset_id: int | None = None
 
 
 class CommentCreate(BaseModel):
@@ -40,6 +42,46 @@ class WebhookSettings(BaseModel):
     webhook_url: str = ""
 
 
+class AppSettings(BaseModel):
+    app_title: str = Field(..., min_length=1, max_length=200)
+
+
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=1, max_length=500)
+    role: Literal["admin", "user"] = "user"
+
+
+class UserUpdate(BaseModel):
+    username: str | None = Field(None, min_length=1, max_length=200)
+    password: str | None = Field(None, min_length=1, max_length=500)
+    role: Literal["admin", "user"] | None = None
+
+
+class AssetTypeCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = ""
+
+
+class AssetTypeUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = None
+
+
+class InventoryCreate(BaseModel):
+    asset_type_id: int
+    hostname: str = Field(..., min_length=1, max_length=500)
+    ip_address: str = ""
+    group_name: str = ""
+
+
+class InventoryUpdate(BaseModel):
+    asset_type_id: int | None = None
+    hostname: str | None = Field(None, min_length=1, max_length=500)
+    ip_address: str | None = None
+    group_name: str | None = None
+
+
 class IncidentOut(BaseModel):
     id: int
     public_id: str
@@ -50,6 +92,7 @@ class IncidentOut(BaseModel):
     created_at: str
     updated_at: str
     closed_at: str | None = None
+    inventory_asset_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,3 +130,22 @@ class KBArticleOut(BaseModel):
 class LoginForm(BaseModel):
     username: str
     password: str
+
+
+class AssetTypeOut(BaseModel):
+    id: int
+    name: str
+    description: str
+    created_at: str
+    updated_at: str
+
+
+class InventoryOut(BaseModel):
+    id: int
+    asset_type_id: int
+    hostname: str
+    ip_address: str
+    group_name: str
+    created_at: str
+    updated_at: str
+    asset_type_name: str | None = None

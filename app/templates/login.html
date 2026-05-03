@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sign in — ITSM Demo</title>
+  <title>Sign in — {{ app_title }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 min-h-screen flex items-center justify-center p-6">
   <form method="post" action="/login" class="bg-white rounded-xl shadow-2xl p-8 w-full max-w-sm space-y-6">
     <div>
-      <h1 class="text-xl font-semibold text-slate-900">ITSM Demo</h1>
+      <h1 class="text-xl font-semibold text-slate-900">{{ app_title }}</h1>
       <p class="text-sm text-slate-500 mt-1">Sign in to continue</p>
     </div>
     {% if request.query_params.get('error') %}
@@ -28,7 +28,7 @@
     <button type="submit" class="w-full rounded-lg bg-blue-600 text-white py-2.5 text-sm font-medium hover:bg-blue-700">
       Sign in
     </button>
-    <p class="text-xs text-slate-400 text-center">Demo users: admin / ansible (see users.yaml)</p>
+    <p class="text-xs text-slate-400 text-center">Use an account created by your administrator (bootstrap via env on first install).</p>
   </form>
 </body>
 </html>

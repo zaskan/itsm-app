@@ -7,7 +7,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-COPY users.yaml ./users.yaml
 
 # Writable paths for random OpenShift UIDs (supplemental GID 0)
 RUN mkdir -p /data \
@@ -15,7 +14,6 @@ RUN mkdir -p /data \
     && chmod -R g=u /app /data
 
 ENV PYTHONUNBUFFERED=1 \
-    ITSM_CONFIG=/app/users.yaml \
     ITSM_DATABASE=/data/itsm.db
 
 USER 1001

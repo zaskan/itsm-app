@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set active_nav = 'incidents' %}
-{% block title %}Incidents — ITSM Demo{% endblock %}
+{% block title %}Incidents — {{ app_title }}{% endblock %}
 {% block page_heading %}Incidents{% endblock %}
 
 {% block header_actions %}
@@ -53,6 +53,7 @@
         <th class="px-4 py-3 font-medium">Severity</th>
         <th class="px-4 py-3 font-medium">Status</th>
         <th class="px-4 py-3 font-medium">Incident</th>
+        <th class="px-4 py-3 font-medium">Asset</th>
         <th class="px-4 py-3 font-medium">Created</th>
         <th class="px-4 py-3 font-medium">ID</th>
       </tr>
@@ -84,6 +85,14 @@
             <div class="text-slate-500 text-xs mt-0.5 line-clamp-2">{{ row.description }}</div>
           </button>
         </td>
+        <td class="px-4 py-4 text-xs text-slate-600">
+          {% if row.linked_hostname %}
+          <span class="font-medium text-slate-800">{{ row.linked_hostname }}</span>
+          {% if row.linked_asset_type_name %}<span class="text-slate-400"> · {{ row.linked_asset_type_name }}</span>{% endif %}
+          {% else %}
+          <span class="text-slate-400">—</span>
+          {% endif %}
+        </td>
         <td class="px-4 py-4 text-slate-600 text-xs">
           <div data-relative="{{ row.created_at }}">{{ row.created_at }}</div>
           <div class="text-slate-400">{{ row.created_at }}</div>
@@ -92,7 +101,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="5" class="px-4 py-12 text-center text-slate-500">No incidents match your filters.</td>
+        <td colspan="6" class="px-4 py-12 text-center text-slate-500">No incidents match your filters.</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -129,6 +138,15 @@
           <input type="date" name="incident_date" value="{{ today }}" required
             class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </div>
+      </div>
+      <div>
+        <label class="text-sm font-medium text-slate-700">Linked inventory (optional)</label>
+        <select name="inventory_asset_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="">— None —</option>
+          {% for it in inventory_items %}
+          <option value="{{ it.id }}">{{ it.hostname }} ({{ it.asset_type_name }})</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" class="px-4 py-2 text-sm text-slate-600"

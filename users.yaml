@@ -1,7 +1,0 @@
-users:
-  - username: admin
-    password: admin
-    role: admin
-  - username: ansible
-    password: ansible
-    role: user

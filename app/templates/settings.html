@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% set active_nav = 'settings' %}
+{% block title %}Settings — {{ app_title }}{% endblock %}
+{% block page_heading %}Settings{% endblock %}
+
+{% block content %}
+<p class="text-slate-600 text-sm mb-4">Branding shown in the sidebar, page titles, and sign-in screen.</p>
+<form method="post" action="/settings" class="max-w-md space-y-4 bg-white rounded-xl border border-slate-200 p-6">
+  <div>
+    <label class="text-sm font-medium text-slate-700">Application title</label>
+    <input name="app_title" value="{{ current_title | e }}" required
+      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+  </div>
+  <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium">Save</button>
+</form>
+{% endblock %}

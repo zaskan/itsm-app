@@ -24,11 +24,29 @@ def _get_incident_row(cur, ident: str | int) -> dict | None:
     return dict(row) if row else None
 
 
+def _asset_summary(cur, asset_id: int | None) -> dict[str, Any] | None:
+    if asset_id is None:
+        return None
+    cur.execute(
+        """
+        SELECT i.id, i.hostname, i.ip_address, i.group_name, t.name AS asset_type_name
+        FROM inventory_assets i
+        JOIN asset_types t ON t.id = i.asset_type_id
+        WHERE i.id = ?
+        """,
+        (asset_id,),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
 def incident_snapshot(cur, incident_id: int) -> dict[str, Any]:
     inc = _get_incident_row(cur, incident_id)
     if not inc:
         return {}
     comments = list_comments(cur, incident_id)
+    aid = inc.get("inventory_asset_id")
+    asset = _asset_summary(cur, aid) if aid is not None else None
     out = {
         "id": inc["id"],
         "public_id": inc["public_id"],
@@ -39,6 +57,8 @@ def incident_snapshot(cur, incident_id: int) -> dict[str, Any]:
         "created_at": inc["created_at"],
         "updated_at": inc["updated_at"],
         "closed_at": inc["closed_at"],
+        "inventory_asset_id": aid,
+        "linked_asset": asset,
         "comments": comments,
     }
     return out
@@ -80,6 +100,14 @@ def log_event(
     )
 
 
+def _validate_asset_id(cur, asset_id: int | None) -> None:
+    if asset_id is None:
+        return
+    cur.execute("SELECT id FROM inventory_assets WHERE id = ?", (asset_id,))
+    if not cur.fetchone():
+        raise ValueError("Unknown inventory asset")
+
+
 def create_incident(
     *,
     title: str,
@@ -87,16 +115,18 @@ def create_incident(
     severity: str,
     actor_user_id: int,
     created_at: str | None,
+    inventory_asset_id: int | None = None,
 ) -> dict[str, Any]:
     ts = created_at or _utc_now_iso()
     now = _utc_now_iso()
     with db.cursor() as cur:
+        _validate_asset_id(cur, inventory_asset_id)
         cur.execute(
             """
-            INSERT INTO incidents (public_id, title, description, severity, status, created_at, updated_at)
-            VALUES ('TEMP', ?, ?, ?, 'open', ?, ?)
+            INSERT INTO incidents (public_id, title, description, severity, status, created_at, updated_at, inventory_asset_id)
+            VALUES ('TEMP', ?, ?, ?, 'open', ?, ?, ?)
             """,
-            (title, description, severity, ts, now),
+            (title, description, severity, ts, now, inventory_asset_id),
         )
         iid = cur.lastrowid
         public_id = f"INC-{iid}"
@@ -109,7 +139,7 @@ def create_incident(
             iid,
             "created",
             actor_user_id,
-            {"title": title, "severity": severity},
+            {"title": title, "severity": severity, "inventory_asset_id": inventory_asset_id},
         )
         snap = incident_snapshot(cur, iid)
     return snap
@@ -167,6 +197,37 @@ def update_severity(incident_id: int, severity: str, actor_user_id: int) -> dict
     return snap
 
 
+def update_incident_links(
+    incident_id: str | int,
+    *,
+    inventory_asset_id: int | None,
+    actor_user_id: int,
+    clear_asset: bool = False,
+) -> dict[str, Any]:
+    """Set or clear linked inventory asset on an open incident."""
+    now = _utc_now_iso()
+    with db.cursor() as cur:
+        inc = _get_incident_row(cur, incident_id)
+        if not inc or inc["status"] != "open":
+            raise ValueError("Incident not found or closed")
+        new_val = None if clear_asset else inventory_asset_id
+        if new_val is not None:
+            _validate_asset_id(cur, new_val)
+        old = inc.get("inventory_asset_id")
+        cur.execute(
+            "UPDATE incidents SET inventory_asset_id = ?, updated_at = ? WHERE id = ?",
+            (new_val, now, inc["id"]),
+        )
+        log_event(
+            cur,
+            inc["id"],
+            "asset_linked",
+            actor_user_id,
+            {"from": old, "to": new_val},
+        )
+        return incident_snapshot(cur, inc["id"])
+
+
 def close_incident(incident_id: int, actor_user_id: int) -> dict[str, Any]:
     now = _utc_now_iso()
     with db.cursor() as cur:
@@ -197,23 +258,30 @@ def list_incidents(
     clauses: list[str] = []
     params: list[Any] = []
     if q:
-        clauses.append("(title LIKE ? OR description LIKE ? OR public_id LIKE ?)")
+        clauses.append("(x.title LIKE ? OR x.description LIKE ? OR x.public_id LIKE ?)")
         like = f"%{q}%"
         params.extend([like, like, like])
     if status:
-        clauses.append("status = ?")
+        clauses.append("x.status = ?")
         params.append(status)
     if severity:
-        clauses.append("severity = ?")
+        clauses.append("x.severity = ?")
         params.append(severity)
     if date_from:
-        clauses.append("created_at >= ?")
+        clauses.append("x.created_at >= ?")
         params.append(date_from)
     if date_to:
-        clauses.append("created_at <= ?")
+        clauses.append("x.created_at <= ?")
         params.append(date_to + "T23:59:59")
     where = " AND ".join(clauses) if clauses else "1=1"
-    sql = f"SELECT * FROM incidents WHERE {where} ORDER BY created_at DESC"
+    sql = f"""
+        SELECT x.*, ia.hostname AS linked_hostname, at.name AS linked_asset_type_name
+        FROM incidents x
+        LEFT JOIN inventory_assets ia ON ia.id = x.inventory_asset_id
+        LEFT JOIN asset_types at ON at.id = ia.asset_type_id
+        WHERE {where}
+        ORDER BY x.created_at DESC
+    """
     with db.cursor() as cur:
         cur.execute(sql, params)
         return [dict(r) for r in cur.fetchall()]
@@ -238,11 +306,18 @@ def get_incident_detail(incident_id: str | int) -> dict[str, Any] | None:
         events = []
         for r in cur.fetchall():
             d = dict(r)
-            d["payload"] = json.loads(d["payload"] or "{}")
+            try:
+                d["payload"] = json.loads(d["payload"] or "{}")
+            except json.JSONDecodeError:
+                d["payload"] = {}
             events.append(d)
         comments = list_comments(cur, iid)
-        return {
+        aid = inc.get("inventory_asset_id")
+        linked = _asset_summary(cur, aid) if aid is not None else None
+        out = {
             **dict(inc),
             "comments": comments,
             "events": events,
+            "linked_asset": linked,
         }
+        return out
