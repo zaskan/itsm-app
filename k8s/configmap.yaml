@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: itsm-users-config
+  namespace: itsm-app
+data:
+  users.yaml: |
+    users:
+      - username: admin
+        password: admin
+        role: admin
+      - username: ansible
+        password: ansible
+        role: user

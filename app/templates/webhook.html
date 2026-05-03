@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% set active_nav = 'webhook' %}
+{% block title %}Webhook — ITSM Demo{% endblock %}
+{% block page_heading %}Webhook configuration{% endblock %}
+
+{% block content %}
+<p class="text-slate-600 text-sm mb-6">When a URL is set, the app POSTs JSON to it on every incident create, comment, severity change, and close. Clear the field to disable.</p>
+
+<form method="post" action="/webhook-config" class="max-w-xl space-y-4 bg-white rounded-xl border border-slate-200 p-6">
+  <div>
+    <label class="text-sm font-medium text-slate-700">Webhook URL (JSON)</label>
+    <input type="url" name="webhook_url" value="{{ webhook_url }}"
+      placeholder="https://example.com/hooks/itsm"
+      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+  </div>
+  <p class="text-xs text-slate-500">Payload includes <code class="bg-slate-100 px-1 rounded">event</code>, <code class="bg-slate-100 px-1 rounded">timestamp</code>, <code class="bg-slate-100 px-1 rounded">actor</code>, and <code class="bg-slate-100 px-1 rounded">incident</code> (full snapshot with comments).</p>
+  <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium">Save</button>
+</form>
+{% endblock %}

@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% set active_nav = 'incidents' %}
+{% block title %}Incidents — ITSM Demo{% endblock %}
+{% block page_heading %}Incidents{% endblock %}
+
+{% block header_actions %}
+<button type="button" onclick="document.getElementById('new-modal').classList.remove('hidden')"
+  class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-hover">
+  + New Ticket
+</button>
+{% endblock %}
+
+{% block content %}
+<form method="get" action="/incidents" class="flex flex-wrap gap-3 mb-6 items-end">
+  <div class="flex-1 min-w-[200px]">
+    <label class="text-xs font-medium text-slate-500 uppercase tracking-wide">Search</label>
+    <input type="search" name="q" value="{{ q }}" placeholder="Title, description, ID..."
+      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" />
+  </div>
+  <div>
+    <label class="text-xs font-medium text-slate-500 uppercase tracking-wide">Status</label>
+    <select name="status" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+      <option value="">All</option>
+      <option value="open" {% if status_filter == 'open' %}selected{% endif %}>Open</option>
+      <option value="closed" {% if status_filter == 'closed' %}selected{% endif %}>Closed</option>
+    </select>
+  </div>
+  <div>
+    <label class="text-xs font-medium text-slate-500 uppercase tracking-wide">Severity</label>
+    <select name="severity" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+      <option value="">All</option>
+      <option value="low" {% if severity_filter == 'low' %}selected{% endif %}>Low</option>
+      <option value="medium" {% if severity_filter == 'medium' %}selected{% endif %}>Medium</option>
+      <option value="high" {% if severity_filter == 'high' %}selected{% endif %}>High</option>
+      <option value="critical" {% if severity_filter == 'critical' %}selected{% endif %}>Critical</option>
+    </select>
+  </div>
+  <div>
+    <label class="text-xs font-medium text-slate-500 uppercase tracking-wide">From</label>
+    <input type="date" name="date_from" value="{{ date_from }}" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" />
+  </div>
+  <div>
+    <label class="text-xs font-medium text-slate-500 uppercase tracking-wide">To</label>
+    <input type="date" name="date_to" value="{{ date_to }}" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" />
+  </div>
+  <button type="submit" class="rounded-lg bg-slate-700 text-white px-4 py-2 text-sm h-[38px] self-end">Apply</button>
+</form>
+
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+  <table class="w-full text-left text-sm">
+    <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 font-medium">Severity</th>
+        <th class="px-4 py-3 font-medium">Status</th>
+        <th class="px-4 py-3 font-medium">Incident</th>
+        <th class="px-4 py-3 font-medium">Created</th>
+        <th class="px-4 py-3 font-medium">ID</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for row in incidents %}
+      <tr class="hover:bg-slate-50/80">
+        <td class="px-4 py-4">
+          {% set sev = row.severity %}
+          <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold
+            {% if sev == 'critical' %}bg-red-100 text-red-800
+            {% elif sev == 'high' %}bg-orange-100 text-orange-800
+            {% elif sev == 'medium' %}bg-amber-100 text-amber-900
+            {% else %}bg-emerald-100 text-emerald-800{% endif %}">
+            {{ sev | capitalize }}
+          </span>
+        </td>
+        <td class="px-4 py-4">
+          {% if row.status == 'open' %}
+          <span class="text-slate-700">&#9679; Open</span>
+          {% else %}
+          <span class="text-slate-500">&#9675; Closed</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-4">
+          <button type="button" data-ref="{{ row.public_id }}"
+            class="detail-trigger text-left group">
+            <div class="text-primary font-medium group-hover:underline">{{ row.title }}</div>
+            <div class="text-slate-500 text-xs mt-0.5 line-clamp-2">{{ row.description }}</div>
+          </button>
+        </td>
+        <td class="px-4 py-4 text-slate-600 text-xs">
+          <div data-relative="{{ row.created_at }}">{{ row.created_at }}</div>
+          <div class="text-slate-400">{{ row.created_at }}</div>
+        </td>
+        <td class="px-4 py-4 font-mono text-xs text-slate-600">{{ row.public_id }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5" class="px-4 py-12 text-center text-slate-500">No incidents match your filters.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- New ticket modal -->
+<div id="new-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 relative">
+    <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+      onclick="document.getElementById('new-modal').classList.add('hidden')">&times;</button>
+    <h2 class="text-lg font-semibold text-slate-900 mb-4">New ticket</h2>
+    <form method="post" action="/incidents/new" class="space-y-4">
+      <div>
+        <label class="text-sm font-medium text-slate-700">Title</label>
+        <input name="title" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-sm font-medium text-slate-700">Description</label>
+        <textarea name="description" rows="3" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm font-medium text-slate-700">Severity</label>
+          <select name="severity" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-sm font-medium text-slate-700">Date</label>
+          <input type="date" name="incident_date" value="{{ today }}" required
+            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" class="px-4 py-2 text-sm text-slate-600"
+          onclick="document.getElementById('new-modal').classList.add('hidden')">Cancel</button>
+        <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col relative">
+    <button type="button" class="absolute top-4 right-4 z-10 text-slate-400 hover:text-slate-600 text-2xl leading-none"
+      onclick="document.getElementById('detail-modal').classList.add('hidden')">&times;</button>
+    <div id="detail-modal-body" class="overflow-y-auto p-6"></div>
+  </div>
+</div>
+
+<script>
+  function formatRelative(iso) {
+    try {
+      const d = new Date(iso);
+      const s = Math.floor((Date.now() - d) / 1000);
+      if (s < 60) return 'just now';
+      if (s < 3600) return Math.floor(s/60) + ' min ago';
+      if (s < 86400) return Math.floor(s/3600) + ' hours ago';
+      return Math.floor(s/86400) + ' days ago';
+    } catch { return iso; }
+  }
+  document.querySelectorAll('[data-relative]').forEach(el => {
+    el.textContent = formatRelative(el.getAttribute('data-relative'));
+  });
+  document.querySelectorAll('.detail-trigger').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ref = btn.getAttribute('data-ref');
+      const box = document.getElementById('detail-modal-body');
+      box.innerHTML = '<p class="text-slate-500 text-sm">Loading…</p>';
+      document.getElementById('detail-modal').classList.remove('hidden');
+      const r = await fetch('/incidents/' + encodeURIComponent(ref));
+      box.innerHTML = await r.text();
+    });
+  });
+</script>
+{% endblock %}

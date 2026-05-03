@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itsm-app
+  namespace: itsm-app
+  labels:
+    app: itsm-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: itsm-app
+  template:
+    metadata:
+      labels:
+        app: itsm-app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: itsm-app
+          image: image-registry.openshift-image-registry.svc:5000/itsm-app/itsm-app:latest
+          # Always pull after oc start-build so :latest points at a new digest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: ITSM_CONFIG
+              value: /etc/itsm/users.yaml
+            - name: ITSM_DATABASE
+              value: /data/itsm.db
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: itsm-secrets
+                  key: session-secret
+            - name: MCP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: itsm-secrets
+                  key: mcp-token
+          volumeMounts:
+            - name: users-config
+              mountPath: /etc/itsm
+              readOnly: true
+            - name: sqlite-data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: users-config
+          configMap:
+            name: itsm-users-config
+        - name: sqlite-data
+          emptyDir: {}

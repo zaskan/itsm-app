@@ -1,0 +1,64 @@
+<div class="space-y-6">
+  <div>
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-semibold text-slate-900">{{ incident.title }}</h2>
+        <p class="text-sm text-slate-500 font-mono mt-1">{{ incident.public_id }} · {{ incident.severity | capitalize }} ·
+          {% if incident.status == 'open' %}Open{% else %}Closed{% endif %}</p>
+      </div>
+    </div>
+    <p class="mt-3 text-slate-700 text-sm whitespace-pre-wrap">{{ incident.description }}</p>
+  </div>
+
+  {% if incident.status == 'open' %}
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-200 pt-4">
+    <form method="post" action="/incidents/{{ incident.public_id }}/severity" class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-slate-700">Change severity</label>
+      <div class="flex gap-2">
+        <select name="severity" class="rounded-lg border border-slate-300 px-3 py-2 text-sm flex-1">
+          {% for s in ['low','medium','high','critical'] %}
+          <option value="{{ s }}" {% if incident.severity == s %}selected{% endif %}>{{ s | capitalize }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="rounded-lg bg-slate-800 text-white px-3 py-2 text-sm">Update</button>
+      </div>
+    </form>
+    <form method="post" action="/incidents/{{ incident.public_id }}/close" onsubmit="return confirm('Close this ticket?');">
+      <label class="text-sm font-medium text-slate-700">Close ticket</label>
+      <button type="submit" class="mt-2 w-full sm:w-auto rounded-lg border border-red-200 bg-red-50 text-red-800 px-4 py-2 text-sm font-medium">
+        Close ticket
+      </button>
+    </form>
+  </div>
+
+  <form method="post" action="/incidents/{{ incident.public_id }}/comment" class="space-y-2">
+    <label class="text-sm font-medium text-slate-700">Add comment</label>
+    <textarea name="body" rows="3" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+      placeholder="Your update…"></textarea>
+    <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Post comment</button>
+  </form>
+  {% endif %}
+
+  <div>
+    <h3 class="text-sm font-semibold text-slate-800 mb-2">Comments</h3>
+    <ul class="space-y-2">
+      {% for c in incident.comments %}
+      <li class="text-sm border-l-2 border-slate-200 pl-3 py-1">
+        <span class="text-slate-500 text-xs">{{ c.author_username }} · {{ c.created_at }}</span>
+        <p class="text-slate-800 mt-0.5 whitespace-pre-wrap">{{ c.body }}</p>
+      </li>
+      {% else %}
+      <li class="text-slate-500 text-sm">No comments yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div>
+    <h3 class="text-sm font-semibold text-slate-800 mb-2">Activity</h3>
+    <ul class="text-xs text-slate-600 space-y-1 max-h-40 overflow-y-auto">
+      {% for e in incident.events %}
+      <li><span class="font-mono text-slate-500">{{ e.created_at }}</span> — {{ e.event_type }} ({{ e.actor_username }})</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>

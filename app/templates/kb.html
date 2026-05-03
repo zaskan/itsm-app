@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% set active_nav = 'kb' %}
+{% block title %}Knowledge Base — ITSM Demo{% endblock %}
+{% block page_heading %}Knowledge Base{% endblock %}
+
+{% block header_actions %}
+<button type="button" onclick="document.getElementById('kb-new').classList.remove('hidden')"
+  class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-hover">+ New article</button>
+{% endblock %}
+
+{% block content %}
+<p class="text-slate-600 text-sm mb-4">Articles are stored for documentation and can be consumed by agents (REST and MCP) for RAG-style workflows.</p>
+
+<form method="get" class="mb-6 flex gap-2 max-w-md">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search title or body…" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+  <button type="submit" class="rounded-lg bg-slate-700 text-white px-4 py-2 text-sm">Search</button>
+</form>
+
+<div class="space-y-3">
+  {% for a in articles %}
+  <div class="bg-white rounded-lg border border-slate-200 p-4 flex justify-between gap-4">
+    <div>
+      <h3 class="font-medium text-slate-900">{{ a.title }}</h3>
+      <p class="text-sm text-slate-600 mt-1 whitespace-pre-wrap">{{ a.description }}</p>
+      <p class="text-xs text-slate-400 mt-2">Updated {{ a.updated_at }}</p>
+    </div>
+    <div class="shrink-0 flex flex-col gap-2">
+      <button type="button" onclick="editKb({{ a.id }}, {{ a.title|tojson }}, {{ a.description|tojson }})"
+        class="text-sm text-primary hover:underline">Edit</button>
+      <form method="post" action="/kb/{{ a.id }}/delete" onsubmit="return confirm('Delete this article?');">
+        <button type="submit" class="text-sm text-red-600 hover:underline">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-slate-500">No articles yet. Create one to seed your knowledge base.</p>
+  {% endfor %}
+</div>
+
+<div id="kb-new" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 relative">
+    <button type="button" class="absolute top-4 right-4 text-slate-400" onclick="document.getElementById('kb-new').classList.add('hidden')">&times;</button>
+    <h2 class="text-lg font-semibold mb-4">New article</h2>
+    <form method="post" action="/kb/new" class="space-y-4">
+      <div>
+        <label class="text-sm font-medium">Title</label>
+        <input name="title" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-sm font-medium">Description</label>
+        <textarea name="description" rows="5" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+      </div>
+      <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Save</button>
+    </form>
+  </div>
+</div>
+
+<div id="kb-edit" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 relative">
+    <button type="button" class="absolute top-4 right-4 text-slate-400" onclick="document.getElementById('kb-edit').classList.add('hidden')">&times;</button>
+    <h2 class="text-lg font-semibold mb-4">Edit article</h2>
+    <form id="kb-edit-form" method="post" class="space-y-4">
+      <div>
+        <label class="text-sm font-medium">Title</label>
+        <input name="title" id="kb-edit-title" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-sm font-medium">Description</label>
+        <textarea name="description" id="kb-edit-desc" rows="5" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+      </div>
+      <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Save</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  function editKb(id, title, desc) {
+    document.getElementById('kb-edit-form').action = '/kb/' + id + '/edit';
+    document.getElementById('kb-edit-title').value = title;
+    document.getElementById('kb-edit-desc').value = desc;
+    document.getElementById('kb-edit').classList.remove('hidden');
+  }
+</script>
+{% endblock %}

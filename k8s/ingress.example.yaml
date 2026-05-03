@@ -1,0 +1,20 @@
+# Optional: replace OpenShift Route with generic Ingress (edit host and class).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: itsm-app
+  namespace: itsm-app
+  annotations: {}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: itsm-app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: itsm-app
+                port:
+                  number: 8000

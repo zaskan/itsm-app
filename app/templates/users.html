@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% set active_nav = 'users' %}
+{% block title %}Users — ITSM Demo{% endblock %}
+{% block page_heading %}Users{% endblock %}
+
+{% block content %}
+<p class="text-slate-600 text-sm mb-4">Users are defined in the configuration file and synced to the database on startup. This list is read-only in the UI.</p>
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden max-w-lg">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-600 border-b">
+      <tr>
+        <th class="px-4 py-3 text-left">Username</th>
+        <th class="px-4 py-3 text-left">Role</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for u in users %}
+      <tr>
+        <td class="px-4 py-3 font-medium">{{ u.username }}</td>
+        <td class="px-4 py-3 text-slate-600">{{ u.role }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
