@@ -4,38 +4,45 @@ Single-process FastAPI app with SQLite: **incidents** (comments, severity change
 
 ## Features
 
-| Area | Description |
-|------|-------------|
-| Incidents | Create, filter, comment, change severity, link/unlink inventory asset, close. |
-| Resolution on close | Optionally choose a **Knowledge Base article** when closing a ticket (UI, API, MCP). Stored as `resolution_kb_article_id`; webhooks include `resolution_kb_article` in the snapshot. |
+
+| Area                 | Description                                                                                                                                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Incidents            | Create, filter, comment, change severity, link/unlink inventory asset, close.                                                                                                                                                                                       |
+| Resolution on close  | Optionally choose a **Knowledge Base article** when closing a ticket (UI, API, MCP). Stored as `resolution_kb_article_id`; webhooks include `resolution_kb_article` in the snapshot.                                                                                |
 | SLA (closed tickets) | Resolution time vs targets by severity: critical 1h, high 4h, medium 1d, low 2d. Duration uses the **created** audit event as open time (actual filing time), not only `incidents.created_at`, which may be midnight UTC for the chosen calendar day from the form. |
-| Knowledge Base | Articles for documentation and linking from closed incidents. |
-| Inventory | Hostname, IP, group, asset type; both roles may manage. |
-| Asset types | Catalog for inventory classification; **any authenticated user** may create, edit, or delete types (same as inventory). |
-| Settings | Admin: application title (`app_settings`). |
-| Webhooks | Single global URL; **GET** readable by any authenticated user, **PUT** admin-only. |
-| Users | Admin CRUD; cannot remove/demote the last administrator (guards in UI and API). |
-| MCP | Tools for incidents, KB, asset types, inventory; optional bearer token (no per-user RBAC inside MCP—mirror REST credentials when auditing matters). |
+| Knowledge Base       | Articles for documentation and linking from closed incidents.                                                                                                                                                                                                       |
+| Inventory            | Hostname, IP, group, asset type; both roles may manage.                                                                                                                                                                                                             |
+| Asset types          | Catalog for inventory classification; **any authenticated user** may create, edit, or delete types (same as inventory).                                                                                                                                             |
+| Settings             | Admin: **branding** (title, built-in or custom logotype, sidebar colors with Navy/Slate/Forest/Wine/Bronze/Light presets) in `app_settings` and optional uploads under `app/static/uploads/branding/`. API: `GET`/`PATCH` `/api/v1/settings/branding`, `POST` `.../logo` (multipart), `DELETE` `.../logo` | `.../colors` | `.../branding` (204, no body on deletes). |
+| Webhooks             | Single global URL; **GET** readable by any authenticated user, **PUT** admin-only.                                                                                                                                                                                  |
+| Users                | Admin CRUD; cannot remove/demote the last administrator (guards in UI and API).                                                                                                                                                                                     |
+| MCP                  | Tools for incidents, KB, asset types, inventory; optional bearer token (no per-user RBAC inside MCP—mirror REST credentials when auditing matters).                                                                                                                 |
+
 
 ## Roles
 
-| Area | Admin | User |
-|------|-------|------|
-| Incidents, KB, Inventory, Asset types | Full | Full |
-| Settings (app title) | Yes | — |
-| Webhook URL (read) | Yes | Yes |
-| Webhook URL (write) | Yes | — |
-| Users CRUD | Yes | — |
+
+| Area                                  | Admin | User |
+| ------------------------------------- | ----- | ---- |
+| Incidents, KB, Inventory, Asset types | Full  | Full |
+| Settings (title, branding)            | Yes   | —    |
+| Webhook URL (read)                    | Yes   | Yes  |
+| Webhook URL (write)                   | Yes   | —    |
+| Users CRUD                            | Yes   | —    |
+
 
 ## Environment variables
 
-| Variable | Purpose |
-|----------|---------|
-| `SESSION_SECRET` | Secret for signed browser sessions (required in production). |
-| `ITSM_DATABASE` | SQLite path (default: `./data/itsm.db`). |
-| `ITSM_BOOTSTRAP_ADMIN_USER` / `ITSM_BOOTSTRAP_ADMIN_PASSWORD` | First admin when the DB has zero users. |
-| `ITSM_BOOTSTRAP_ADMIN` | Alternative: `username:password` single string. |
-| `MCP_TOKEN` | If set, MCP endpoint requires `X-ITSM-MCP-Token` or `Authorization: Bearer`. |
+
+| Variable                                                      | Purpose                                                                      |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `SESSION_SECRET`                                              | Secret for signed browser sessions (required in production).                 |
+| `ITSM_DATABASE`                                               | SQLite path (default: `./data/itsm.db`).                                     |
+| `ITSM_BOOTSTRAP_ADMIN_USER` / `ITSM_BOOTSTRAP_ADMIN_PASSWORD` | First admin when the DB has zero users.                                      |
+| `ITSM_BOOTSTRAP_ADMIN`                                        | Alternative: `username:password` single string.                              |
+| `MCP_TOKEN`                                                   | Optional shared secret (you define the value). If set, MCP requires `X-ITSM-MCP-Token` or `Authorization: Bearer`. See [MCP token](#mcp-token-create-and-configure). |
+| `MCP_ALLOWED_HOSTS`                                           | Optional comma-separated `Host` values for MCP DNS rebinding protection. **Unset by default** so MCP works behind OpenShift/ingress with a public hostname. Set only if you need strict host allowlists. |
+
 
 ## Run locally (Python)
 
@@ -78,46 +85,31 @@ To push to a registry (for OpenShift or other clusters), tag and `podman push` t
 Prerequisites: `oc login` to your cluster, permission to create projects/resources.
 
 1. **Project**
-
-   ```bash
+  ```bash
    oc new-project itsm-app
-   ```
-
+  ```
    Or: `oc apply -f k8s/namespace.yaml` then `oc project itsm-app`.
-
 2. **Secrets**
-
-   Edit [k8s/secret.yaml](k8s/secret.yaml): `session-secret`, `mcp-token`, and optionally `bootstrap-admin-user` / `bootstrap-admin-password` (used only when the database file has **no users** — typical first pod start with `emptyDir`).
-
-   ```bash
-   oc apply -f k8s/secret.yaml
-   ```
-
+  Edit [k8s/secret.yaml](k8s/secret.yaml): `session-secret`, `mcp-token`, and optionally `bootstrap-admin-user` / `bootstrap-admin-password` (used only when the database file has **no users** — typical first pod start with `emptyDir`).
 3. **Build image in-cluster** (binary build from your workstation):
-
-   ```bash
+  ```bash
    cd /path/to/itsm-app
    oc new-build --name=itsm-app --binary --strategy=docker -l app=itsm-app
    oc start-build itsm-app --from-dir=. --follow
-   ```
-
+  ```
    Confirm the ImageStream name/tag (`oc get is -n itsm-app`). If it does not match [k8s/deployment.yaml](k8s/deployment.yaml) (`image-registry.openshift-image-registry.svc:5000/itsm-app/itsm-app:latest`), patch the Deployment image or use `oc tag` so the Deployment pulls your build.
-
 4. **Deploy**
-
-   ```bash
+  ```bash
    oc apply -f k8s/deployment.yaml
    oc apply -f k8s/service.yaml
    oc apply -f k8s/route.yaml
-   ```
-
+  ```
 5. **Verify**
-
-   ```bash
+  ```bash
    oc get pods -n itsm-app
    oc logs -n itsm-app -l app=itsm-app --tail=80
    oc get route -n itsm-app
-   ```
+  ```
 
 **Notes**
 
@@ -132,38 +124,40 @@ Same manifests minus Route; use [k8s/ingress.example.yaml](k8s/ingress.example.y
 
 All routes require **HTTP Basic** authentication unless noted. **Admin** means `role == admin`.
 
-| Method | Path | Access |
-|--------|------|--------|
-| GET | `/settings/app` | Authenticated |
-| PUT | `/settings/app` | Admin |
-| GET | `/settings/webhook` | Authenticated |
-| PUT | `/settings/webhook` | Admin |
-| GET | `/incidents` | Authenticated |
-| POST | `/incidents` | Authenticated |
-| GET | `/incidents/{incident_ref}` | Authenticated |
-| PATCH | `/incidents/{incident_ref}` | Authenticated |
-| POST | `/incidents/{incident_ref}/comments` | Authenticated |
-| POST | `/incidents/{incident_ref}/close` | Authenticated — optional JSON body `{ "kb_article_id": <int> \| null }` to link a KB article as resolution |
-| GET | `/kb/articles` | Authenticated |
-| POST | `/kb/articles` | Authenticated |
-| GET | `/kb/articles/{article_id}` | Authenticated |
-| PATCH | `/kb/articles/{article_id}` | Authenticated |
-| DELETE | `/kb/articles/{article_id}` | Authenticated |
-| GET | `/users` | Admin |
-| POST | `/users` | Admin |
-| PATCH | `/users/{user_id}` | Admin |
-| DELETE | `/users/{user_id}` | Admin |
-| GET | `/asset-types` | Authenticated |
-| POST | `/asset-types` | Authenticated |
-| PATCH | `/asset-types/{type_id}` | Authenticated |
-| DELETE | `/asset-types/{type_id}` | Authenticated |
-| GET | `/inventory` | Authenticated |
-| POST | `/inventory` | Authenticated |
-| GET | `/inventory/{item_id}` | Authenticated |
-| PATCH | `/inventory/{item_id}` | Authenticated |
-| DELETE | `/inventory/{item_id}` | Authenticated |
 
-Full schemas and try-it-out: **`/docs`**.
+| Method | Path                                 | Access                                                                                                    |
+| ------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| GET    | `/settings/app`                      | Authenticated                                                                                             |
+| PUT    | `/settings/app`                      | Admin                                                                                                     |
+| GET    | `/settings/webhook`                  | Authenticated                                                                                             |
+| PUT    | `/settings/webhook`                  | Admin                                                                                                     |
+| GET    | `/incidents`                         | Authenticated                                                                                             |
+| POST   | `/incidents`                         | Authenticated                                                                                             |
+| GET    | `/incidents/{incident_ref}`          | Authenticated                                                                                             |
+| PATCH  | `/incidents/{incident_ref}`          | Authenticated                                                                                             |
+| POST   | `/incidents/{incident_ref}/comments` | Authenticated                                                                                             |
+| POST   | `/incidents/{incident_ref}/close`    | Authenticated — optional JSON body `{ "kb_article_id": <int> | null }` to link a KB article as resolution |
+| GET    | `/kb/articles`                       | Authenticated                                                                                             |
+| POST   | `/kb/articles`                       | Authenticated                                                                                             |
+| GET    | `/kb/articles/{article_id}`          | Authenticated                                                                                             |
+| PATCH  | `/kb/articles/{article_id}`          | Authenticated                                                                                             |
+| DELETE | `/kb/articles/{article_id}`          | Authenticated                                                                                             |
+| GET    | `/users`                             | Admin                                                                                                     |
+| POST   | `/users`                             | Admin                                                                                                     |
+| PATCH  | `/users/{user_id}`                   | Admin                                                                                                     |
+| DELETE | `/users/{user_id}`                   | Admin                                                                                                     |
+| GET    | `/asset-types`                       | Authenticated                                                                                             |
+| POST   | `/asset-types`                       | Authenticated                                                                                             |
+| PATCH  | `/asset-types/{type_id}`             | Authenticated                                                                                             |
+| DELETE | `/asset-types/{type_id}`             | Authenticated                                                                                             |
+| GET    | `/inventory`                         | Authenticated                                                                                             |
+| POST   | `/inventory`                         | Authenticated                                                                                             |
+| GET    | `/inventory/{item_id}`               | Authenticated                                                                                             |
+| PATCH  | `/inventory/{item_id}`               | Authenticated                                                                                             |
+| DELETE | `/inventory/{item_id}`               | Authenticated                                                                                             |
+
+
+Full schemas and try-it-out: `**/docs`**.
 
 ## Webhook payload
 
@@ -171,40 +165,111 @@ When a webhook URL is configured, incident changes trigger `POST` with JSON incl
 
 ## MCP (Streamable HTTP)
 
-- **URL:** `{base URL}/mcp`
-- **Auth:** If `MCP_TOKEN` is set, send **`X-ITSM-MCP-Token: <token>`** or **`Authorization: Bearer <token>`**.
+- **URL:** `{base URL}/mcp/` (trailing slash avoids redirect issues with some HTTP clients.)
+- **Auth:** If `MCP_TOKEN` is set, send **`X-ITSM-MCP-Token: <token>`** or **`Authorization: Bearer <token>`**. Wrong or missing token → **401** with OAuth-style JSON. A **404** usually means the URL or route is wrong, not the token.
+- **OpenShift / ingress:** The MCP library’s DNS rebinding check defaults to localhost-only and causes **421 Misdirected Request / Invalid Host header** when a valid token reaches the app. This repo disables that unless **`MCP_ALLOWED_HOSTS`** is set (see env table).
+- **Cursor / MCP authorization discovery:** The MCP spec requires **OAuth Protected Resource Metadata** (RFC 9728). Clients typically call **`/.well-known/oauth-protected-resource/mcp`** first (aligned with the **`/mcp`** mount). This app serves valid **200** metadata documents there and at **`/.well-known/oauth-authorization-server`**, plus stub **`/oauth/*`** endpoints so discovery does not end in **404 Not Found**. Real access control for this deployment is still **optional `MCP_TOKEN`** and the **`X-ITSM-MCP-Token`** header in Cursor.
+
+### MCP token (create and configure)
+
+The app does **not** issue tokens over HTTP. You choose a long random string and use it as the shared secret.
+
+1. **Generate a value** (example):
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+2. **Local / Podman:** export it before starting the app:
+
+   ```bash
+   export MCP_TOKEN="<paste-the-generated-string>"
+   ```
+
+   Omit `MCP_TOKEN` entirely if you want MCP open without a header (development only).
+
+3. **OpenShift / Kubernetes:** put the **same** string in the cluster secret as `mcp-token` (see [k8s/secret.yaml](k8s/secret.yaml)). The Deployment maps that key to env `MCP_TOKEN`. After changing the secret:
+
+   ```bash
+   oc apply -f k8s/secret.yaml   # or patch itsm-secrets
+   oc rollout restart deployment/itsm-app -n itsm-app
+   ```
+
+4. **Read the token currently deployed** (to configure a client without rotation):
+
+   ```bash
+   oc get secret itsm-secrets -n itsm-app -o jsonpath='{.data.mcp-token}' | base64 -d; echo
+   ```
+
+5. **Cursor (and other MCP clients):** the token must be available in **the environment of the Cursor process** (not only in a terminal). Remote MCP entries cannot use `envFile`; `${env:ITSM_MCP_TOKEN}` is resolved when Cursor starts. Example `.cursor/mcp.json`:
+
+   ```json
+   "headers": {
+     "X-ITSM-MCP-Token": "${env:ITSM_MCP_TOKEN}",
+     "Authorization": "Bearer ${env:ITSM_MCP_TOKEN}"
+   }
+   ```
+
+   **If tools never connect:** confirm the server accepts your token:  
+   `curl -sS -H "Authorization: Bearer $(oc get secret itsm-secrets -n itsm-app -o jsonpath='{.data.mcp-token}' | base64 -d)" -H "Content-Type: application/json" -H "Accept: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' "https://<route>/mcp/"`  
+   should return HTTP **200** JSON with `serverInfo`. If that works but Cursor does not, **`ITSM_MCP_TOKEN` is not set for the IDE** — e.g. launch Cursor from a shell where you exported it (`ITSM_MCP_TOKEN=... cursor /path/to/project`), or define it in your desktop session (systemd `environment.d`, GNOME session env, etc.), then **fully restart Cursor**.
+
+6. **Quick check with curl (OpenShift):** do **not** add extra quotes around the token; the header value must be the raw secret only.
+
+   ```bash
+   TOKEN=$(oc get secret itsm-secrets -n itsm-app -o jsonpath='{.data.mcp-token}' | base64 -d)
+   curl -sS -H "X-ITSM-MCP-Token: ${TOKEN}" "https://<route-host>/mcp/"
+   ```
+
+   A **401** `invalid_token` with a correct secret in the cluster usually means the shell sent quotes inside the header (e.g. `-H "X-ITSM-MCP-Token: \"${TOKEN}\""` is wrong). The app also accepts a single pair of surrounding quotes on the token for copy-paste mistakes.
 
 ### Tools
 
-| Tool | Description |
-|------|-------------|
-| `list_incidents` | Optional `status`, `severity` filters. |
-| `get_incident` | Full detail by `incident_ref`. |
-| `create_incident` | Optional `inventory_asset_id`. |
-| `add_comment` | Comment on open incident. |
-| `update_severity` | Severity change. |
-| `close_incident` | Optional `kb_article_id` for resolution KB link. |
-| `list_kb_articles` | Optional query string. |
-| `search_kb` | Substring search in KB. |
-| `get_kb_article` | By id. |
-| `list_asset_types` | — |
-| `create_asset_type` | — |
-| `update_asset_type` | — |
-| `delete_asset_type` | — |
-| `list_inventory` | Optional search substring. |
-| `get_inventory_item` | By id. |
-| `create_inventory_item` | — |
-| `update_inventory_item` | — |
-| `delete_inventory_item` | — |
+
+| Tool                    | Description                                      |
+| ----------------------- | ------------------------------------------------ |
+| `list_incidents`        | Optional `status`, `severity` filters.           |
+| `get_incident`          | Full detail by `incident_ref`.                   |
+| `create_incident`       | Optional `inventory_asset_id`.                   |
+| `add_comment`           | Comment on open incident.                        |
+| `update_severity`       | Severity change.                                 |
+| `close_incident`        | Optional `kb_article_id` for resolution KB link. |
+| `list_kb_articles`      | Optional query string.                           |
+| `search_kb`             | Substring search in KB.                          |
+| `get_kb_article`        | By id.                                           |
+| `create_kb_article`     | Create article (`title`, `description`).         |
+| `list_asset_types`      | —                                                |
+| `create_asset_type`     | —                                                |
+| `update_asset_type`     | —                                                |
+| `delete_asset_type`     | —                                                |
+| `list_inventory`        | Optional search substring.                       |
+| `get_inventory_item`    | By id.                                           |
+| `create_inventory_item` | —                                                |
+| `update_inventory_item` | —                                                |
+| `delete_inventory_item` | —                                                |
+
 
 ### Resources
 
-| URI | Content |
-|-----|---------|
-| `kb://catalog` | JSON list of KB articles. |
-| `kb://article/{article_id}` | Single article JSON. |
-| `inventory://catalog` | JSON list of inventory rows. |
-| `inventory://item/{item_id}` | Single inventory row JSON. |
+
+| URI                          | Content                      |
+| ---------------------------- | ---------------------------- |
+| `kb://catalog`               | JSON list of KB articles.    |
+| `kb://article/{article_id}`  | Single article JSON.         |
+| `inventory://catalog`        | JSON list of inventory rows. |
+| `inventory://item/{item_id}` | Single inventory row JSON.   |
+
+
+## Testing (MCP)
+
+Install dev dependencies and run pytest from the repo root:
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+Tests use a temporary SQLite file (see `tests/conftest.py`) and exercise Streamable HTTP JSON-RPC (`initialize`, `tools/list`, `tools/call`) plus OAuth discovery metadata and optional `MCP_TOKEN` rejection.
 
 ## Health
 

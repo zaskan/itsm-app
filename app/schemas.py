@@ -50,6 +50,25 @@ class AppSettings(BaseModel):
     app_title: str = Field(..., min_length=1, max_length=200)
 
 
+class BrandingOut(BaseModel):
+    app_title: str
+    logo_mode: str
+    logo_url: str
+    sidebar_background: str
+    sidebar_text: str
+    presets_supported: list[str] = Field(
+        default_factory=lambda: ["navy", "slate", "forest", "wine", "bronze", "light"]
+    )
+
+
+class BrandingPatch(BaseModel):
+    app_title: str | None = Field(None, min_length=1, max_length=200)
+    logo_mode: Literal["builtin", "custom"] | None = None
+    sidebar_background: str | None = None
+    sidebar_text: str | None = None
+    preset: str | None = None
+
+
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=1, max_length=200)
     password: str = Field(..., min_length=1, max_length=500)

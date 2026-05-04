@@ -6,7 +6,7 @@ import os
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -21,6 +21,7 @@ from app.services import asset_types as at_svc
 from app.services import incidents as inc_svc
 from app.services import inventory as inv_svc
 from app.services import kb as kb_svc
+from app.services import branding as branding_svc
 from app.services import settings as settings_svc
 from app.services import users_admin as usr_svc
 from app.services import webhooks as wh_svc
@@ -31,13 +32,15 @@ router = APIRouter(tags=["ui"])
 
 
 def _page(request: Request, user: dict, **extra: Any) -> dict[str, Any]:
-    return {
+    ctx = {
         "request": request,
         "user": user,
         "app_title": settings_svc.get_app_title(),
         "is_admin": user.get("role") == "admin",
+        **branding_svc.template_branding_context(),
         **extra,
     }
+    return ctx
 
 
 def _login_ctx(request: Request) -> dict[str, Any]:
@@ -45,6 +48,7 @@ def _login_ctx(request: Request) -> dict[str, Any]:
         "request": request,
         "app_title": settings_svc.get_app_title(),
         "is_admin": False,
+        **branding_svc.template_branding_context(),
     }
 
 
@@ -82,20 +86,90 @@ def root() -> RedirectResponse:
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
     me = require_admin_session(request)
+    b = branding_svc.get_branding()
     return templates.TemplateResponse(
         request,
         "settings.html",
-        _page(request, me, current_title=settings_svc.get_app_title()),
+        _page(
+            request,
+            me,
+            current_title=b["app_title"],
+            branding_presets=branding_svc.PRESETS,
+        ),
     )
 
 
-@router.post("/settings")
-def settings_save(
+@router.post("/settings/application-title")
+def settings_save_title(
     request: Request,
     app_title: str = Form(...),
 ) -> RedirectResponse:
     require_admin_session(request)
     settings_svc.set_app_title(app_title)
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/settings/branding/logo")
+async def settings_branding_logo(
+    request: Request,
+    logo_mode: str = Form("builtin"),
+    file: UploadFile | None = File(default=None),
+) -> RedirectResponse:
+    require_admin_session(request)
+    try:
+        lm = logo_mode.strip().lower()
+        if lm == branding_svc.MODE_BUILTIN:
+            branding_svc.set_logo_builtin()
+        elif file is not None and (file.filename or "").strip():
+            content = await file.read()
+            branding_svc.save_uploaded_logo(content, file.content_type or "")
+        elif lm == branding_svc.MODE_CUSTOM:
+            branding_svc.patch_branding(logo_mode="custom")
+        else:
+            branding_svc.set_logo_builtin()
+    except ValueError:
+        pass
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/settings/branding/colors")
+def settings_branding_colors(
+    request: Request,
+    sidebar_background: str = Form(...),
+    sidebar_text: str = Form(...),
+) -> RedirectResponse:
+    require_admin_session(request)
+    try:
+        branding_svc.patch_branding(sidebar_background=sidebar_background, sidebar_text=sidebar_text)
+    except ValueError:
+        pass
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/settings/branding/preset")
+def settings_branding_preset(
+    request: Request,
+    preset: str = Form(...),
+) -> RedirectResponse:
+    require_admin_session(request)
+    try:
+        branding_svc.apply_preset(preset)
+    except ValueError:
+        pass
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/settings/branding/reset-title-logo")
+def settings_branding_reset_title_logo(request: Request) -> RedirectResponse:
+    require_admin_session(request)
+    branding_svc.reset_title_logo()
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/settings/branding/reset-colors")
+def settings_branding_reset_colors(request: Request) -> RedirectResponse:
+    require_admin_session(request)
+    branding_svc.reset_sidebar_colors()
     return RedirectResponse("/settings", status_code=303)
 
 

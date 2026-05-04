@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Query, UploadFile, status
 
 from app import schemas
 from app.auth_deps import (
@@ -15,9 +15,11 @@ from app.services import asset_types as at_svc
 from app.services import incidents as inc_svc
 from app.services import inventory as inv_svc
 from app.services import kb as kb_svc
+from app.services import branding as branding_svc
 from app.services import settings as settings_svc
 from app.services import users_admin as usr_svc
 from app.services import webhooks as wh_svc
+from starlette.responses import Response
 
 router = APIRouter(prefix="/api/v1", tags=["api-v1"])
 
@@ -37,6 +39,71 @@ def api_put_app_settings(
     del user
     settings_svc.set_app_title(body.app_title)
     return {"app_title": settings_svc.get_app_title()}
+
+
+@router.get("/settings/branding", response_model=schemas.BrandingOut)
+def api_get_branding(
+    _user: Annotated[dict, Depends(get_current_user_basic_admin)],
+) -> dict:
+    return branding_svc.branding_api_dict()
+
+
+@router.patch("/settings/branding", response_model=schemas.BrandingOut)
+def api_patch_branding(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+    body: schemas.BrandingPatch,
+) -> dict:
+    del user
+    try:
+        return branding_svc.patch_branding(
+            app_title=body.app_title,
+            logo_mode=body.logo_mode,
+            sidebar_background=body.sidebar_background,
+            sidebar_text=body.sidebar_text,
+            preset=body.preset,
+        )
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+
+
+@router.post("/settings/branding/logo", response_model=schemas.BrandingOut)
+async def api_post_branding_logo(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+    file: UploadFile = File(...),
+) -> dict:
+    del user
+    content = await file.read()
+    try:
+        return branding_svc.save_uploaded_logo(content, file.content_type or "")
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+
+
+@router.delete("/settings/branding/logo")
+def api_delete_branding_logo(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+) -> Response:
+    del user
+    branding_svc.set_logo_builtin()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/settings/branding/colors")
+def api_delete_branding_colors(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+) -> Response:
+    del user
+    branding_svc.reset_sidebar_colors()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/settings/branding")
+def api_delete_branding_reset_all(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+) -> Response:
+    del user
+    branding_svc.reset_all_branding()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/incidents", response_model=list[schemas.IncidentOut])

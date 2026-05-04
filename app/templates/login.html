@@ -6,12 +6,20 @@
   <title>Sign in — {{ app_title }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-900 min-h-screen flex items-center justify-center p-6">
-  <form method="post" action="/login" class="bg-white rounded-xl shadow-2xl p-8 w-full max-w-sm space-y-6">
-    <div>
-      <h1 class="text-xl font-semibold text-slate-900">{{ app_title }}</h1>
-      <p class="text-sm text-slate-500 mt-1">Sign in to continue</p>
+<body class="min-h-screen flex items-center justify-center p-6" style="{{ sidebar_style }} background: linear-gradient(155deg, var(--sidebar-bg) 0%, #0f172a 55%, #020617 100%);">
+  <form method="post" action="/login" class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <div class="px-8 pt-8 pb-4" style="background-color: var(--sidebar-bg); color: var(--sidebar-text);">
+      <div class="flex items-center gap-3">
+        {% if branding.logo_url %}
+        <img src="{{ branding.logo_url }}" alt="" width="40" height="40" class="h-10 w-10 object-contain shrink-0" />
+        {% endif %}
+        <div>
+          <h1 class="text-xl font-semibold tracking-tight">{{ app_title }}</h1>
+          <p class="text-sm opacity-80 mt-0.5">Sign in to continue</p>
+        </div>
+      </div>
     </div>
+    <div class="p-8 space-y-6">
     {% if request.query_params.get('error') %}
     <p class="text-sm text-red-600">Invalid username or password.</p>
     {% endif %}
@@ -29,6 +37,7 @@
       Sign in
     </button>
     <p class="text-xs text-slate-400 text-center">Use an account created by your administrator (bootstrap via env on first install).</p>
+    </div>
   </form>
 </body>
 </html>

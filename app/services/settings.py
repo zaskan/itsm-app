@@ -46,3 +46,6 @@ def seed_defaults() -> None:
             """,
             (KEY_APP_TITLE, DEFAULT_APP_TITLE),
         )
+    from app.services.branding import seed_branding_defaults
+
+    seed_branding_defaults()

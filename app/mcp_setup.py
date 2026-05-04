@@ -7,11 +7,32 @@ import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from app.services import asset_types as at_svc
 from app.services import incidents as inc_svc
 from app.services import inventory as inv_svc
 from app.services import kb as kb_svc
+
+
+def _mcp_transport_security() -> TransportSecuritySettings:
+    """FastMCP defaults ``host=127.0.0.1``, which turns on DNS rebinding protection for localhost only.
+
+    OpenShift/Ingress sends the public hostname in ``Host``; without disabling or allowlisting, the MCP
+    transport returns **421 Invalid Host** after token auth passes.
+
+    Set ``MCP_ALLOWED_HOSTS`` to a comma-separated list (e.g. ``app.example.com,app.example.com:443``)
+    to enable protection in production. Omit it to disable (typical behind a trusted ingress).
+    """
+    raw = os.environ.get("MCP_ALLOWED_HOSTS", "").strip()
+    if not raw:
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    hosts = [h.strip() for h in raw.split(",") if h.strip()]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=[],
+    )
 
 
 def build_mcp() -> FastMCP:
@@ -24,6 +45,7 @@ def build_mcp() -> FastMCP:
         stateless_http=True,
         json_response=True,
         streamable_http_path="/",
+        transport_security=_mcp_transport_security(),
     )
 
     @mcp.tool(name="list_incidents", description="List incidents with optional status and severity filters.")
@@ -119,6 +141,14 @@ def build_mcp() -> FastMCP:
         if not art:
             return json.dumps({"error": "not_found"})
         return json.dumps(art, indent=2)
+
+    @mcp.tool(name="create_kb_article", description="Create a knowledge base article (title and body text).")
+    def create_kb_article(title: str, description: str = "") -> str:
+        try:
+            row = kb_svc.create_article(title, description)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+        return json.dumps(row, indent=2)
 
     @mcp.tool(name="list_asset_types", description="List all asset type definitions.")
     def list_asset_types() -> str:
@@ -224,6 +254,14 @@ def build_mcp() -> FastMCP:
     return mcp
 
 
+def _normalize_mcp_token(value: str) -> str:
+    """Strip whitespace and one pair of surrounding quotes (common shell copy-paste mistake)."""
+    s = value.strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
+        return s[1:-1].strip()
+    return s
+
+
 def asgi_with_optional_mcp_auth(inner: Any, token: str | None) -> Any:
     """Wrap MCP Starlette app with optional bearer / X-ITSM-MCP-Token check."""
 
@@ -232,7 +270,7 @@ def asgi_with_optional_mcp_auth(inner: Any, token: str | None) -> Any:
 
         def __init__(self, app: Any, tok: str | None) -> None:
             self.app = app
-            self.token = tok
+            self.token = tok.strip() if tok else None
 
         async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
             if scope["type"] != "http":
@@ -240,15 +278,21 @@ def asgi_with_optional_mcp_auth(inner: Any, token: str | None) -> Any:
                 return
             if self.token:
                 raw = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
-                header_tok = raw.get("x-itsm-mcp-token", "")
+                header_tok = _normalize_mcp_token(raw.get("x-itsm-mcp-token", ""))
                 auth = raw.get("authorization", "")
                 bearer = ""
                 if auth.lower().startswith("bearer "):
-                    bearer = auth[7:].strip()
+                    bearer = _normalize_mcp_token(auth[7:])
                 if header_tok != self.token and bearer != self.token:
                     from starlette.responses import JSONResponse
 
-                    resp = JSONResponse({"detail": "Unauthorized"}, status_code=401)
+                    resp = JSONResponse(
+                        {
+                            "error": "invalid_token",
+                            "error_description": "Missing or wrong MCP token (X-ITSM-MCP-Token or Bearer).",
+                        },
+                        status_code=401,
+                    )
                     await resp(scope, receive, send)
                     return
             await self.app(scope, receive, send)
