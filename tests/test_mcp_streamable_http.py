@@ -65,7 +65,8 @@ def test_mcp_jsonrpc_initialize_tools_list_and_call() -> None:
         names = {t["name"] for t in tools}
         assert "create_incident" in names
         assert "create_kb_article" in names
-        assert len(names) >= 19
+        assert "rag_search_kb" in names
+        assert len(names) >= 20
 
         r = client.post(
             "/mcp/",

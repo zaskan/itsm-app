@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app import db
+from app.services import kb_embeddings as kb_emb
 
 
 def _now() -> str:
@@ -48,7 +49,9 @@ def create_article(title: str, description: str) -> dict[str, Any]:
         )
         iid = cur.lastrowid
         cur.execute("SELECT * FROM kb_articles WHERE id = ?", (iid,))
-        return dict(cur.fetchone())
+        row = dict(cur.fetchone())
+    kb_emb.upsert_article_embedding(row["id"], row["title"], row["description"])
+    return row
 
 
 def update_article(aid: int, title: str | None, description: str | None) -> dict[str, Any] | None:
@@ -66,7 +69,9 @@ def update_article(aid: int, title: str | None, description: str | None) -> dict
             (new_title, new_desc, now, aid),
         )
         cur.execute("SELECT * FROM kb_articles WHERE id = ?", (aid,))
-        return dict(cur.fetchone())
+        row = dict(cur.fetchone())
+    kb_emb.upsert_article_embedding(row["id"], row["title"], row["description"])
+    return row
 
 
 def delete_article(aid: int) -> bool:

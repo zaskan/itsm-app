@@ -10,13 +10,13 @@ Single-process FastAPI app with SQLite: **incidents** (comments, severity change
 | Incidents            | Create, filter, comment, change severity, link/unlink inventory asset, close.                                                                                                                                                                                       |
 | Resolution on close  | Optionally choose a **Knowledge Base article** when closing a ticket (UI, API, MCP). Stored as `resolution_kb_article_id`; webhooks include `resolution_kb_article` in the snapshot.                                                                                |
 | SLA (closed tickets) | Resolution time vs targets by severity: critical 1h, high 4h, medium 1d, low 2d. Duration uses the **created** audit event as open time (actual filing time), not only `incidents.created_at`, which may be midnight UTC for the chosen calendar day from the form. |
-| Knowledge Base       | Articles for documentation and linking from closed incidents.                                                                                                                                                                                                       |
+| Knowledge Base       | Articles for documentation and linking from closed incidents. Optional **semantic search** via MCP `rag_search_kb` when `ITSM_EMBEDDING_*` is set (OpenAI-compatible `/v1/embeddings`); new and updated articles are indexed automatically. Run `scripts/reindex_kb_embeddings.py` once to backfill existing rows. |
 | Inventory            | Hostname, IP, group, asset type; both roles may manage.                                                                                                                                                                                                             |
 | Asset types          | Catalog for inventory classification; **any authenticated user** may create, edit, or delete types (same as inventory).                                                                                                                                             |
 | Settings             | Admin: **branding** (title, built-in or custom logotype, sidebar colors with Navy/Slate/Forest/Wine/Bronze/Light presets) in `app_settings` and optional uploads under `app/static/uploads/branding/`. API: `GET`/`PATCH` `/api/v1/settings/branding`, `POST` `.../logo` (multipart), `DELETE` `.../logo` | `.../colors` | `.../branding` (204, no body on deletes). |
 | Webhooks             | Multiple outbound URLs stored in `outbound_webhooks`; **GET** list readable by any authenticated user; **POST** / **PATCH** / **DELETE** admin-only (UI under Webhook config).                                                                                                                                                       |
 | Users                | Admin CRUD; cannot remove/demote the last administrator (guards in UI and API).                                                                                                                                                                                     |
-| MCP                  | Tools for incidents, KB, asset types, inventory; optional bearer token (no per-user RBAC inside MCP—mirror REST credentials when auditing matters).                                                                                                                 |
+| MCP                  | Tools for incidents, KB (including `rag_search_kb` semantic search when embeddings are configured), asset types, inventory; optional bearer token (no per-user RBAC inside MCP—mirror REST credentials when auditing matters).                                                                                                                 |
 
 
 ## Roles
@@ -42,7 +42,24 @@ Single-process FastAPI app with SQLite: **incidents** (comments, severity change
 | `ITSM_BOOTSTRAP_ADMIN`                                        | Alternative: `username:password` single string.                              |
 | `MCP_TOKEN`                                                   | Optional shared secret (you define the value). If set, MCP requires `X-ITSM-MCP-Token` or `Authorization: Bearer`. See [MCP token](#mcp-token-create-and-configure). |
 | `MCP_ALLOWED_HOSTS`                                           | Optional comma-separated `Host` values for MCP DNS rebinding protection. **Unset by default** so MCP works behind OpenShift/ingress with a public hostname. Set only if you need strict host allowlists. |
+| `ITSM_EMBEDDING_BASE_URL`                                     | Origin of an OpenAI-compatible API (e.g. `https://llamastack.example.com`, no path); the app POSTs to `{BASE}/v1/embeddings`. Used for MCP `rag_search_kb` and automatic KB indexing on create/update. |
+| `ITSM_EMBEDDING_MODEL`                                        | Embedding model id required when using RAG (with `ITSM_EMBEDDING_BASE_URL`). |
+| `ITSM_EMBEDDING_API_KEY`                                      | Optional `Bearer` token for the embeddings API. |
 
+### KB semantic search (RAG)
+
+Set `ITSM_EMBEDDING_BASE_URL` and `ITSM_EMBEDDING_MODEL` (and `ITSM_EMBEDDING_API_KEY` if your gateway requires it). Embeddings are stored in SQLite (`kb_article_embeddings`) and updated when articles are created or edited; deleting an article removes its row via foreign-key cascade.
+
+After enabling embeddings, **backfill** articles that already existed:
+
+```bash
+export ITSM_DATABASE="$PWD/data/itsm.db"
+export ITSM_EMBEDDING_BASE_URL="https://your-llamastack-host"
+export ITSM_EMBEDDING_MODEL="your-embedding-model"
+python scripts/reindex_kb_embeddings.py
+```
+
+Use MCP tool **`rag_search_kb`** for natural-language queries; **`search_kb`** remains substring search on title and description.
 
 ## Run locally (Python)
 
@@ -167,6 +184,7 @@ When one or more webhook URLs are enabled, incident changes trigger a `POST` to 
 
 ## MCP (Streamable HTTP)
 
+- **KB RAG:** With `ITSM_EMBEDDING_BASE_URL` and `ITSM_EMBEDDING_MODEL` set, tool **`rag_search_kb`** runs semantic retrieval over indexed articles. Prefer it over **`search_kb`** for paraphrased or conceptual questions.
 - **URL:** `{base URL}/mcp/` (trailing slash avoids redirect issues with some HTTP clients.)
 - **Auth:** If `MCP_TOKEN` is set, send **`X-ITSM-MCP-Token: <token>`** or **`Authorization: Bearer <token>`**. Wrong or missing token → **401** with OAuth-style JSON. A **404** usually means the URL or route is wrong, not the token.
 - **OpenShift / ingress:** The MCP library’s DNS rebinding check defaults to localhost-only and causes **421 Misdirected Request / Invalid Host header** when a valid token reaches the app. This repo disables that unless **`MCP_ALLOWED_HOSTS`** is set (see env table).

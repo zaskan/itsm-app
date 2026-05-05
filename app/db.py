@@ -49,6 +49,14 @@ _SCHEMA_SQL = """
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS kb_article_embeddings (
+                article_id INTEGER PRIMARY KEY,
+                embedding TEXT NOT NULL,
+                model TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (article_id) REFERENCES kb_articles(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS incidents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 public_id TEXT NOT NULL UNIQUE,

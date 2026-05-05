@@ -13,6 +13,7 @@ from app.services import asset_types as at_svc
 from app.services import incidents as inc_svc
 from app.services import inventory as inv_svc
 from app.services import kb as kb_svc
+from app.services import kb_embeddings as kb_emb_svc
 
 
 def _mcp_transport_security() -> TransportSecuritySettings:
@@ -40,6 +41,7 @@ def build_mcp() -> FastMCP:
         "ITSM Demo",
         instructions=(
             "Tools for ITSM incidents, knowledge base, asset types, and inventory (demo). "
+            "For KB: prefer rag_search_kb for natural-language / semantic questions; use search_kb for literal substring matches. "
             "MCP has no per-user auth; mirror REST credentials when auditing matters."
         ),
         stateless_http=True,
@@ -134,6 +136,14 @@ def build_mcp() -> FastMCP:
     def search_kb(query: str, limit: int = 50) -> str:
         rows = kb_svc.search_articles(query, limit=min(limit, 200))
         return json.dumps(rows, indent=2)
+
+    @mcp.tool(
+        name="rag_search_kb",
+        description="Semantic search over the knowledge base using embeddings (configure ITSM_EMBEDDING_* env). Returns top matching articles with similarity scores.",
+    )
+    def rag_search_kb(query: str, top_k: int = 5) -> str:
+        out = kb_emb_svc.rag_search_kb(query, top_k=min(max(top_k, 1), 50))
+        return json.dumps(out, indent=2)
 
     @mcp.tool(name="get_kb_article", description="Fetch one KB article by id.")
     def get_kb_article(article_id: int) -> str:
