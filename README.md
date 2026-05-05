@@ -14,7 +14,7 @@ Single-process FastAPI app with SQLite: **incidents** (comments, severity change
 | Inventory            | Hostname, IP, group, asset type; both roles may manage.                                                                                                                                                                                                             |
 | Asset types          | Catalog for inventory classification; **any authenticated user** may create, edit, or delete types (same as inventory).                                                                                                                                             |
 | Settings             | Admin: **branding** (title, built-in or custom logotype, sidebar colors with Navy/Slate/Forest/Wine/Bronze/Light presets) in `app_settings` and optional uploads under `app/static/uploads/branding/`. API: `GET`/`PATCH` `/api/v1/settings/branding`, `POST` `.../logo` (multipart), `DELETE` `.../logo` | `.../colors` | `.../branding` (204, no body on deletes). |
-| Webhooks             | Single global URL; **GET** readable by any authenticated user, **PUT** admin-only.                                                                                                                                                                                  |
+| Webhooks             | Multiple outbound URLs stored in `outbound_webhooks`; **GET** list readable by any authenticated user; **POST** / **PATCH** / **DELETE** admin-only (UI under Webhook config).                                                                                                                                                       |
 | Users                | Admin CRUD; cannot remove/demote the last administrator (guards in UI and API).                                                                                                                                                                                     |
 | MCP                  | Tools for incidents, KB, asset types, inventory; optional bearer token (no per-user RBAC inside MCP—mirror REST credentials when auditing matters).                                                                                                                 |
 
@@ -26,8 +26,8 @@ Single-process FastAPI app with SQLite: **incidents** (comments, severity change
 | ------------------------------------- | ----- | ---- |
 | Incidents, KB, Inventory, Asset types | Full  | Full |
 | Settings (title, branding)            | Yes   | —    |
-| Webhook URL (read)                    | Yes   | Yes  |
-| Webhook URL (write)                   | Yes   | —    |
+| Webhooks (list)                       | Yes   | Yes  |
+| Webhooks (create / update / delete)    | Yes   | —    |
 | Users CRUD                            | Yes   | —    |
 
 
@@ -129,8 +129,10 @@ All routes require **HTTP Basic** authentication unless noted. **Admin** means `
 | ------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | GET    | `/settings/app`                      | Authenticated                                                                                             |
 | PUT    | `/settings/app`                      | Admin                                                                                                     |
-| GET    | `/settings/webhook`                  | Authenticated                                                                                             |
-| PUT    | `/settings/webhook`                  | Admin                                                                                                     |
+| GET    | `/settings/webhooks`                 | Authenticated                                                                                             |
+| POST   | `/settings/webhooks`                 | Admin                                                                                                     |
+| PATCH  | `/settings/webhooks/{webhook_id}`    | Admin                                                                                                     |
+| DELETE | `/settings/webhooks/{webhook_id}`    | Admin                                                                                                     |
 | GET    | `/incidents`                         | Authenticated                                                                                             |
 | POST   | `/incidents`                         | Authenticated                                                                                             |
 | GET    | `/incidents/{incident_ref}`          | Authenticated                                                                                             |
@@ -161,7 +163,7 @@ Full schemas and try-it-out: `**/docs`**.
 
 ## Webhook payload
 
-When a webhook URL is configured, incident changes trigger `POST` with JSON including `event` (e.g. `incident.closed`), `timestamp`, `actor`, and `incident` (snapshot with `linked_asset`, `resolution_kb_article`, `comments` when applicable).
+When one or more webhook URLs are enabled, incident changes trigger a `POST` to each destination with JSON including `event` (e.g. `incident.closed`), `timestamp`, `actor`, and `incident` (snapshot with `linked_asset`, `resolution_kb_article`, `comments` when applicable).
 
 ## MCP (Streamable HTTP)
 

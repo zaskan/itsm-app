@@ -303,20 +303,61 @@ def api_kb_delete(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
 
 
-@router.get("/settings/webhook", response_model=schemas.WebhookSettings)
-def api_get_webhook(user: Annotated[dict, Depends(get_current_user_basic)]) -> dict:
+@router.get("/settings/webhooks", response_model=list[schemas.WebhookOut])
+def api_list_webhooks(user: Annotated[dict, Depends(get_current_user_basic)]) -> list[dict]:
     del user
-    return {"webhook_url": wh_svc.get_webhook_url()}
+    return wh_svc.list_webhooks()
 
 
-@router.put("/settings/webhook", response_model=schemas.WebhookSettings)
-def api_put_webhook(
+@router.post(
+    "/settings/webhooks",
+    response_model=schemas.WebhookOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def api_create_webhook(
     user: Annotated[dict, Depends(get_current_user_basic_admin)],
-    body: schemas.WebhookSettings,
+    body: schemas.WebhookCreate,
 ) -> dict:
     del user
-    wh_svc.set_webhook_url(body.webhook_url)
-    return {"webhook_url": wh_svc.get_webhook_url()}
+    try:
+        return wh_svc.create_webhook(body.url, label=body.label, enabled=body.enabled)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+
+
+@router.patch("/settings/webhooks/{webhook_id}", response_model=schemas.WebhookOut)
+def api_patch_webhook(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+    webhook_id: int,
+    body: schemas.WebhookPatch,
+) -> dict:
+    del user
+    patch = body.model_dump(exclude_unset=True)
+    if not patch:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No fields to update")
+    try:
+        row = wh_svc.update_webhook(
+            webhook_id,
+            url=patch.get("url") if "url" in patch else None,
+            label=patch.get("label") if "label" in patch else None,
+            enabled=patch.get("enabled") if "enabled" in patch else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    if not row:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    return row
+
+
+@router.delete("/settings/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
+def api_delete_webhook(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+    webhook_id: int,
+) -> Response:
+    del user
+    if not wh_svc.delete_webhook(webhook_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/users", response_model=list[schemas.UserOut])

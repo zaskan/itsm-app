@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Severity = Literal["low", "medium", "high", "critical"]
 IncidentStatus = Literal["open", "closed"]
@@ -42,8 +42,29 @@ class KBArticleUpdate(BaseModel):
     description: str | None = None
 
 
-class WebhookSettings(BaseModel):
-    webhook_url: str = ""
+class WebhookOut(BaseModel):
+    id: int
+    url: str
+    label: str = ""
+    enabled: bool
+    created_at: str
+
+    @field_validator("enabled", mode="before")
+    @classmethod
+    def coerce_enabled(cls, v: Any) -> bool:
+        return bool(v)
+
+
+class WebhookCreate(BaseModel):
+    url: str = Field(..., min_length=1, max_length=4096)
+    label: str = Field("", max_length=200)
+    enabled: bool = True
+
+
+class WebhookPatch(BaseModel):
+    url: str | None = Field(None, min_length=1, max_length=4096)
+    label: str | None = Field(None, max_length=200)
+    enabled: bool | None = None
 
 
 class AppSettings(BaseModel):

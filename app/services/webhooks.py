@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -14,27 +15,98 @@ from app import db
 logger = logging.getLogger(__name__)
 
 
-def get_webhook_url() -> str:
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT value FROM app_settings WHERE key = ?",
-            ("webhook_url",),
-        )
-        row = cur.fetchone()
-    if not row:
-        return ""
-    return row[0] or ""
-
-
-def set_webhook_url(url: str) -> None:
+def list_webhooks() -> list[dict[str, Any]]:
     with db.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app_settings (key, value) VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """,
-            ("webhook_url", url.strip()),
+            SELECT id, url, label, enabled, created_at
+            FROM outbound_webhooks
+            ORDER BY id ASC
+            """
         )
+        rows = cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_webhook(webhook_id: int) -> dict[str, Any] | None:
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, url, label, enabled, created_at
+            FROM outbound_webhooks WHERE id = ?
+            """,
+            (webhook_id,),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def create_webhook(url: str, label: str = "", enabled: bool = True) -> dict[str, Any]:
+    url = url.strip()
+    if not url:
+        raise ValueError("URL is required")
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO outbound_webhooks (url, label, enabled, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (url, label.strip(), 1 if enabled else 0, now),
+        )
+        wid = cur.lastrowid
+        cur.execute(
+            """
+            SELECT id, url, label, enabled, created_at
+            FROM outbound_webhooks WHERE id = ?
+            """,
+            (wid,),
+        )
+        row = cur.fetchone()
+    assert row is not None
+    return dict(row)
+
+
+def update_webhook(
+    webhook_id: int,
+    *,
+    url: str | None = None,
+    label: str | None = None,
+    enabled: bool | None = None,
+) -> dict[str, Any] | None:
+    existing = get_webhook(webhook_id)
+    if not existing:
+        return None
+    new_url = existing["url"] if url is None else url.strip()
+    if not new_url:
+        raise ValueError("URL is required")
+    new_label = existing["label"] if label is None else label.strip()
+    new_enabled = existing["enabled"] if enabled is None else (1 if enabled else 0)
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE outbound_webhooks
+            SET url = ?, label = ?, enabled = ?
+            WHERE id = ?
+            """,
+            (new_url, new_label, new_enabled, webhook_id),
+        )
+    return get_webhook(webhook_id)
+
+
+def delete_webhook(webhook_id: int) -> bool:
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM outbound_webhooks WHERE id = ?", (webhook_id,))
+        return cur.rowcount > 0
+
+
+def _enabled_urls() -> list[tuple[int, str]]:
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id, url FROM outbound_webhooks WHERE enabled = 1 ORDER BY id ASC"
+        )
+        rows = cur.fetchall()
+    return [(int(row[0]), str(row[1]).strip()) for row in rows if row[1] and str(row[1]).strip()]
 
 
 def event_name(internal: str) -> str:
@@ -57,9 +129,17 @@ def schedule_incident_webhook(
     background_tasks.add_task(dispatch_webhook, ev, actor_username, snapshot)
 
 
+async def _post_one(client: httpx.AsyncClient, url: str, payload: dict[str, Any]) -> None:
+    try:
+        r = await client.post(url, json=payload)
+        r.raise_for_status()
+    except Exception:
+        logger.exception("Webhook delivery failed for url=%s", url)
+
+
 async def dispatch_webhook(event: str, actor_username: str, incident_snapshot: dict[str, Any]) -> None:
-    url = get_webhook_url()
-    if not url:
+    targets = _enabled_urls()
+    if not targets:
         return
     payload = {
         "event": event,
@@ -67,9 +147,8 @@ async def dispatch_webhook(event: str, actor_username: str, incident_snapshot: d
         "actor": actor_username,
         "incident": incident_snapshot,
     }
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(url, json=payload)
-            r.raise_for_status()
-    except Exception:
-        logger.exception("Webhook delivery failed for event=%s url=%s", event, url)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        await asyncio.gather(
+            *(_post_one(client, url, payload) for _wid, url in targets),
+            return_exceptions=False,
+        )

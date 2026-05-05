@@ -444,21 +444,42 @@ def kb_delete(request: Request, article_id: int) -> RedirectResponse:
 @router.get("/webhook-config", response_class=HTMLResponse)
 def webhook_page(request: Request) -> HTMLResponse:
     user = require_admin_session(request)
-    url = wh_svc.get_webhook_url()
+    hooks = wh_svc.list_webhooks()
     return templates.TemplateResponse(
         request,
         "webhook.html",
-        _page(request, user, webhook_url=url),
+        _page(request, user, webhooks=hooks),
     )
 
 
-@router.post("/webhook-config")
-def webhook_save(
+@router.post("/webhook-config/add")
+def webhook_add(
     request: Request,
-    webhook_url: str = Form(""),
+    url: str = Form(...),
+    label: str = Form(""),
+    enabled: str | None = Form(None),
 ) -> RedirectResponse:
     require_admin_session(request)
-    wh_svc.set_webhook_url(webhook_url)
+    try:
+        wh_svc.create_webhook(url, label=label, enabled=enabled == "on")
+    except ValueError:
+        pass
+    return RedirectResponse("/webhook-config", status_code=303)
+
+
+@router.post("/webhook-config/{webhook_id}/toggle")
+def webhook_toggle(request: Request, webhook_id: int) -> RedirectResponse:
+    require_admin_session(request)
+    row = wh_svc.get_webhook(webhook_id)
+    if row:
+        wh_svc.update_webhook(webhook_id, enabled=not bool(row["enabled"]))
+    return RedirectResponse("/webhook-config", status_code=303)
+
+
+@router.post("/webhook-config/{webhook_id}/delete")
+def webhook_delete(request: Request, webhook_id: int) -> RedirectResponse:
+    require_admin_session(request)
+    wh_svc.delete_webhook(webhook_id)
     return RedirectResponse("/webhook-config", status_code=303)
 
 

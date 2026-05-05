@@ -1,19 +1,64 @@
 {% extends "base.html" %}
 {% set active_nav = 'webhook' %}
-{% block title %}Webhook — {{ app_title }}{% endblock %}
+{% block title %}Webhooks — {{ app_title }}{% endblock %}
 {% block page_heading %}Webhook configuration{% endblock %}
 
 {% block content %}
-<p class="text-slate-600 text-sm mb-6">When a URL is set, the app POSTs JSON to it on every incident create, comment, severity change, and close. Clear the field to disable.</p>
+<p class="text-slate-600 text-sm mb-6">When at least one URL is enabled, the app POSTs JSON to each destination on every incident create, comment, severity change, asset link change, and close. Disable or remove a row to stop delivery there.</p>
 
-<form method="post" action="/webhook-config" class="max-w-xl space-y-4 bg-white rounded-xl border border-slate-200 p-6">
-  <div>
-    <label class="text-sm font-medium text-slate-700">Webhook URL (JSON)</label>
-    <input type="url" name="webhook_url" value="{{ webhook_url }}"
-      placeholder="https://example.com/hooks/itsm"
-      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 max-w-3xl">
+  <h3 class="text-sm font-semibold text-slate-800 mb-3">Add webhook</h3>
+  <form method="post" action="/webhook-config/add" class="space-y-3">
+    <div>
+      <label class="text-sm text-slate-700">Label (optional)</label>
+      <input type="text" name="label" maxlength="200" placeholder="Slack, PagerDuty, …"
+        class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+    </div>
+    <div>
+      <label class="text-sm text-slate-700">Webhook URL (JSON)</label>
+      <input type="url" name="url" required
+        placeholder="https://example.com/hooks/itsm"
+        class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+    </div>
+    <div class="flex items-center gap-2">
+      <input type="checkbox" name="enabled" id="wh_enabled" checked class="rounded border-slate-300" />
+      <label for="wh_enabled" class="text-sm text-slate-700">Enabled</label>
+    </div>
+    <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium">Add</button>
+  </form>
+</div>
+
+{% if webhooks %}
+<div class="space-y-4 max-w-3xl">
+  {% for wh in webhooks %}
+  <div class="bg-white rounded-xl border border-slate-200 p-4">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-2">
+      <div class="min-w-0">
+        <p class="text-sm font-medium text-slate-800 truncate">
+          {% if wh.label %}{{ wh.label }}{% else %}<span class="text-slate-400 font-normal">No label</span>{% endif %}
+        </p>
+        <p class="text-xs text-slate-500 break-all mt-0.5">{{ wh.url }}</p>
+      </div>
+      <span class="text-xs font-medium px-2 py-0.5 rounded {% if wh.enabled %}bg-emerald-50 text-emerald-800{% else %}bg-slate-100 text-slate-600{% endif %}">
+        {% if wh.enabled %}Enabled{% else %}Disabled{% endif %}
+      </span>
+    </div>
+    <div class="flex flex-wrap gap-3 mt-3">
+      <form method="post" action="/webhook-config/{{ wh.id }}/toggle">
+        <button type="submit" class="text-sm text-primary hover:underline">
+          {% if wh.enabled %}Disable{% else %}Enable{% endif %}
+        </button>
+      </form>
+      <form method="post" action="/webhook-config/{{ wh.id }}/delete" onsubmit="return confirm('Remove this webhook?');">
+        <button type="submit" class="text-sm text-red-600 hover:underline">Remove</button>
+      </form>
+    </div>
   </div>
-  <p class="text-xs text-slate-500">Payload includes <code class="bg-slate-100 px-1 rounded">event</code>, <code class="bg-slate-100 px-1 rounded">timestamp</code>, <code class="bg-slate-100 px-1 rounded">actor</code>, and <code class="bg-slate-100 px-1 rounded">incident</code> (full snapshot with comments).</p>
-  <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium">Save</button>
-</form>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-sm text-slate-500 max-w-3xl">No webhooks configured yet.</p>
+{% endif %}
+
+<p class="text-xs text-slate-500 mt-8 max-w-3xl">Each POST body includes <code class="bg-slate-100 px-1 rounded">event</code>, <code class="bg-slate-100 px-1 rounded">timestamp</code>, <code class="bg-slate-100 px-1 rounded">actor</code>, and <code class="bg-slate-100 px-1 rounded">incident</code> (full snapshot with comments).</p>
 {% endblock %}

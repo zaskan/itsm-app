@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from datetime import datetime, timezone
 import threading
 from contextlib import contextmanager
 from pathlib import Path
@@ -84,6 +85,14 @@ _SCHEMA_SQL = """
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS outbound_webhooks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
             CREATE INDEX IF NOT EXISTS idx_incidents_severity ON incidents(severity);
             CREATE INDEX IF NOT EXISTS idx_comments_incident ON comments(incident_id);
@@ -160,6 +169,24 @@ def _migrate_legacy_schema() -> None:
                 REFERENCES kb_articles(id) ON DELETE SET NULL
                 """
             )
+
+        cur.execute("SELECT COUNT(*) FROM outbound_webhooks")
+        if cur.fetchone()[0] == 0:
+            cur.execute(
+                "SELECT value FROM app_settings WHERE key = ?",
+                ("webhook_url",),
+            )
+            legacy = cur.fetchone()
+            if legacy and legacy[0] and str(legacy[0]).strip():
+                now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                cur.execute(
+                    """
+                    INSERT INTO outbound_webhooks (url, label, enabled, created_at)
+                    VALUES (?, '', 1, ?)
+                    """,
+                    (str(legacy[0]).strip(), now),
+                )
+                cur.execute("DELETE FROM app_settings WHERE key = ?", ("webhook_url",))
 
 
 def _bootstrap_env_admin() -> None:
