@@ -58,6 +58,24 @@ spec:
                   name: itsm-secrets
                   key: bootstrap-admin-password
                   optional: true
+            - name: ITSM_EMBEDDING_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: itsm-secrets
+                  key: embedding-base-url
+                  optional: true
+            - name: ITSM_EMBEDDING_MODEL
+              valueFrom:
+                secretKeyRef:
+                  name: itsm-secrets
+                  key: embedding-model
+                  optional: true
+            - name: ITSM_EMBEDDING_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: itsm-secrets
+                  key: embedding-api-key
+                  optional: true
           volumeMounts:
             - name: sqlite-data
               mountPath: /data

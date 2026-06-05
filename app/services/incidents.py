@@ -396,3 +396,12 @@ def get_incident_detail(incident_id: str | int) -> dict[str, Any] | None:
             )
         )
         return out
+
+
+def delete_incident(incident_ref: str | int) -> bool:
+    with db.cursor() as cur:
+        inc = _get_incident_row(cur, incident_ref)
+        if not inc:
+            return False
+        cur.execute("DELETE FROM incidents WHERE id = ?", (inc["id"],))
+        return cur.rowcount > 0

@@ -127,6 +127,14 @@ def build_mcp() -> FastMCP:
             return json.dumps({"error": str(e)})
         return json.dumps(snap, indent=2)
 
+    @mcp.tool(
+        name="delete_incident",
+        description="Permanently delete an incident by ref (id or public_id).",
+    )
+    def delete_incident(incident_ref: str) -> str:
+        ok = inc_svc.delete_incident(incident_ref)
+        return json.dumps({"deleted": ok})
+
     @mcp.tool(name="list_kb_articles", description="List knowledge base articles.")
     def list_kb_articles(query: str | None = None) -> str:
         rows = kb_svc.list_articles(q=query)

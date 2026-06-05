@@ -250,6 +250,22 @@ def api_close(
     return snap_full
 
 
+@router.delete("/incidents/{incident_ref}", status_code=status.HTTP_204_NO_CONTENT)
+def api_delete_incident(
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(get_current_user_basic)],
+    incident_ref: str,
+) -> Response:
+    snap = inc_svc.get_incident_detail(incident_ref)
+    if not inc_svc.delete_incident(incident_ref):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    if snap:
+        wh_svc.schedule_incident_webhook(
+            background_tasks, "deleted", user["username"], snap
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/kb/articles", response_model=list[schemas.KBArticleOut])
 def api_kb_list(
     user: Annotated[dict, Depends(get_current_user_basic)],

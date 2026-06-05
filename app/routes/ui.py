@@ -392,6 +392,25 @@ def incident_close(
     return RedirectResponse("/incidents", status_code=303)
 
 
+@router.post("/incidents/{incident_ref}/delete")
+def incident_delete(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    incident_ref: str,
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    snap = inc_svc.get_incident_detail(incident_ref)
+    if not inc_svc.delete_incident(incident_ref):
+        raise HTTPException(404, "Not found")
+    if snap:
+        wh_svc.schedule_incident_webhook(
+            background_tasks, "deleted", me["username"], snap
+        )
+    return RedirectResponse("/incidents", status_code=303)
+
+
 @router.get("/kb", response_class=HTMLResponse)
 def kb_page(request: Request, q: str | None = None) -> HTMLResponse:
     user = get_session_user(request)
