@@ -128,6 +128,19 @@ def _delete_custom_file_if_any() -> None:
         pass
 
 
+def clear_custom_uploads() -> None:
+    """Remove all files in the branding upload directory."""
+    upload_dir = STATIC_ROOT / UPLOAD_SUBDIR
+    if not upload_dir.is_dir():
+        return
+    for path in upload_dir.iterdir():
+        try:
+            if path.is_file():
+                path.unlink()
+        except OSError:
+            pass
+
+
 def set_logo_builtin() -> None:
     _delete_custom_file_if_any()
     _set(KEY_LOGO_MODE, MODE_BUILTIN)

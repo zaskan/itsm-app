@@ -93,8 +93,8 @@
           </button>
         </td>
         <td class="px-4 py-4 text-xs text-slate-600">
-          {% if row.linked_hostname %}
-          <span class="font-medium text-slate-800">{{ row.linked_hostname }}</span>
+          {% if row.linked_name %}
+          <span class="font-medium text-slate-800">{{ row.linked_name }}</span>
           {% if row.linked_asset_type_name %}<span class="text-slate-400"> · {{ row.linked_asset_type_name }}</span>{% endif %}
           {% else %}
           <span class="text-slate-400">—</span>
@@ -158,7 +158,7 @@
         <select name="inventory_asset_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
           <option value="">— None —</option>
           {% for it in inventory_items %}
-          <option value="{{ it.id }}">{{ it.hostname }} ({{ it.asset_type_name }})</option>
+          <option value="{{ it.id }}">{{ it.name }}{% if it.asset_type_name %} ({{ it.asset_type_name }}){% endif %}</option>
           {% endfor %}
         </select>
       </div>

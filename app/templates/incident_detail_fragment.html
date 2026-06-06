@@ -36,10 +36,10 @@
     <label class="text-sm font-medium text-slate-700">Linked inventory</label>
     {% if incident.linked_asset %}
     <p class="text-sm text-slate-600 mt-1">
-      <span class="font-medium text-slate-900">{{ incident.linked_asset.hostname }}</span>
+      <span class="font-medium text-slate-900">{{ incident.linked_asset.name }}</span>
       · {{ incident.linked_asset.asset_type_name }}
       {% if incident.linked_asset.ip_address %} · {{ incident.linked_asset.ip_address }}{% endif %}
-      {% if incident.linked_asset.group_name %} · {{ incident.linked_asset.group_name }}{% endif %}
+      {% if incident.linked_asset.assigned_username %} · {{ incident.linked_asset.assigned_username }}{% endif %}
     </p>
     {% else %}
     <p class="text-sm text-slate-500 mt-1">No asset linked.</p>
@@ -48,7 +48,7 @@
       <select name="inventory_asset_id" class="rounded-lg border border-slate-300 px-3 py-2 text-sm flex-1 min-w-[200px]">
         <option value="">— Clear link —</option>
         {% for it in inventory_items %}
-        <option value="{{ it.id }}" {% if incident.inventory_asset_id == it.id %}selected{% endif %}>{{ it.hostname }} ({{ it.asset_type_name }})</option>
+        <option value="{{ it.id }}" {% if incident.inventory_asset_id == it.id %}selected{% endif %}>{{ it.name }}{% if it.asset_type_name %} ({{ it.asset_type_name }}){% endif %}</option>
         {% endfor %}
       </select>
       <button type="submit" class="rounded-lg bg-slate-800 text-white px-3 py-2 text-sm">Update link</button>
@@ -57,7 +57,7 @@
   {% elif incident.linked_asset %}
   <div class="border-t border-slate-200 pt-4 text-sm text-slate-600">
     <span class="font-medium text-slate-800">Asset:</span>
-    {{ incident.linked_asset.hostname }} ({{ incident.linked_asset.asset_type_name }})
+    {{ incident.linked_asset.name }}{% if incident.linked_asset.asset_type_name %} ({{ incident.linked_asset.asset_type_name }}){% endif %}
   </div>
   {% endif %}
 

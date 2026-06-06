@@ -18,13 +18,22 @@ from app.auth_deps import (
     verify_password,
 )
 from app.services import asset_types as at_svc
+from app.services import change_templates as ctpl_svc
+from app.services import changes as chg_svc
+from app.services import custom_fields as cf_svc
 from app.services import incidents as inc_svc
 from app.services import inventory as inv_svc
 from app.services import kb as kb_svc
 from app.services import branding as branding_svc
+from app.services import data_purge as data_purge_svc
+from app.services import request_templates as rtpl_svc
+from app.services import service_requests as req_svc
 from app.services import settings as settings_svc
+from app.services import task_templates as ttpl_svc
+from app.services import tasks as task_svc
 from app.services import users_admin as usr_svc
 from app.services import webhooks as wh_svc
+from app.services import workflow as wf_svc
 
 DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 templates = Jinja2Templates(directory=os.path.normpath(DIR))
@@ -84,7 +93,11 @@ def root() -> RedirectResponse:
 
 
 @router.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request) -> HTMLResponse:
+def settings_page(
+    request: Request,
+    purged: str | None = None,
+    error: str | None = None,
+) -> HTMLResponse:
     me = require_admin_session(request)
     b = branding_svc.get_branding()
     return templates.TemplateResponse(
@@ -95,6 +108,8 @@ def settings_page(request: Request) -> HTMLResponse:
             me,
             current_title=b["app_title"],
             branding_presets=branding_svc.PRESETS,
+            purged=purged == "1",
+            purge_error=error or "",
         ),
     )
 
@@ -171,6 +186,23 @@ def settings_branding_reset_colors(request: Request) -> RedirectResponse:
     require_admin_session(request)
     branding_svc.reset_sidebar_colors()
     return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/settings/purge-data")
+def settings_purge_data(
+    request: Request,
+    confirm: str = Form(""),
+) -> RedirectResponse:
+    me = require_admin_session(request)
+    if confirm != data_purge_svc.PURGE_CONFIRM_PHRASE:
+        return RedirectResponse("/settings?error=purge_confirm", status_code=303)
+    try:
+        data_purge_svc.purge_all_data(actor_admin_id=me["id"])
+    except ValueError as e:
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/settings?error={quote(str(e))}", status_code=303)
+    return RedirectResponse("/settings?purged=1", status_code=303)
 
 
 @router.get("/incidents", response_class=HTMLResponse)
@@ -568,14 +600,17 @@ def users_delete(request: Request, user_id: int) -> RedirectResponse:
 
 @router.get("/asset-types", response_class=HTMLResponse)
 def asset_types_page(request: Request) -> HTMLResponse:
-    user = get_session_user(request)
-    if not user:
-        raise login_redirect()
+    user = require_admin_session(request)
     rows = at_svc.list_types()
+    types_with_fields = []
+    for t in rows:
+        d = dict(t)
+        d["field_definitions"] = cf_svc.list_definitions("asset_type", t["id"])
+        types_with_fields.append(d)
     return templates.TemplateResponse(
         request,
         "asset_types.html",
-        _page(request, user, types=rows),
+        _page(request, user, types=types_with_fields),
     )
 
 
@@ -585,8 +620,7 @@ def asset_types_new(
     name: str = Form(...),
     description: str = Form(""),
 ) -> RedirectResponse:
-    if not get_session_user(request):
-        raise login_redirect()
+    require_admin_session(request)
     try:
         at_svc.create_type(name, description)
     except Exception:
@@ -601,16 +635,14 @@ def asset_types_edit(
     name: str = Form(...),
     description: str = Form(""),
 ) -> RedirectResponse:
-    if not get_session_user(request):
-        raise login_redirect()
+    require_admin_session(request)
     at_svc.update_type(type_id, name, description)
     return RedirectResponse("/asset-types", status_code=303)
 
 
 @router.post("/asset-types/{type_id}/delete")
 def asset_types_delete(request: Request, type_id: int) -> RedirectResponse:
-    if not get_session_user(request):
-        raise login_redirect()
+    require_admin_session(request)
     try:
         at_svc.delete_type(type_id)
     except Exception:
@@ -618,67 +650,761 @@ def asset_types_delete(request: Request, type_id: int) -> RedirectResponse:
     return RedirectResponse("/asset-types", status_code=303)
 
 
-@router.get("/inventory", response_class=HTMLResponse)
-def inventory_page(request: Request, q: str | None = None) -> HTMLResponse:
+@router.post("/asset-types/{type_id}/fields/new")
+def asset_type_field_new(
+    request: Request,
+    type_id: int,
+    field_key: str = Form(...),
+    label: str = Form(...),
+    field_type: str = Form("text"),
+    required: str = Form(""),
+    options: str = Form(""),
+) -> RedirectResponse:
+    require_admin_session(request)
+    opts = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        cf_svc.create_definition(
+            scope_type="asset_type",
+            scope_id=type_id,
+            field_key=field_key,
+            label=label,
+            field_type=field_type,
+            required=required == "1",
+            options=opts,
+        )
+    except ValueError:
+        return RedirectResponse("/asset-types?error=field", status_code=303)
+    return RedirectResponse("/asset-types", status_code=303)
+
+
+@router.post("/asset-types/{type_id}/fields/{field_id}/delete")
+def asset_type_field_delete(request: Request, type_id: int, field_id: int) -> RedirectResponse:
+    require_admin_session(request)
+    cf_svc.delete_definition(field_id)
+    return RedirectResponse("/asset-types", status_code=303)
+
+
+@router.get("/assets", response_class=HTMLResponse)
+def assets_page(
+    request: Request,
+    q: str | None = None,
+    external_only: str | None = None,
+) -> HTMLResponse:
     user = get_session_user(request)
     if not user:
         raise login_redirect()
-    rows = inv_svc.list_inventory(q=q)
+    ext = external_only == "1"
+    rows = inv_svc.list_inventory(q=q, external_only=ext)
     types = at_svc.list_types()
+    type_fields = {t["id"]: cf_svc.list_definitions("asset_type", t["id"]) for t in types}
+    all_assets = inv_svc.list_inventory()
+    users = usr_svc.list_users()
     return templates.TemplateResponse(
         request,
-        "inventory.html",
-        _page(request, user, items=rows, asset_types=types, q=q or ""),
+        "assets.html",
+        _page(
+            request,
+            user,
+            items=rows,
+            asset_types=types,
+            type_fields=type_fields,
+            all_assets=all_assets,
+            users=users,
+            q=q or "",
+            external_only=ext,
+        ),
     )
 
 
-@router.post("/inventory/new")
-def inventory_new(
-    request: Request,
-    asset_type_id: int = Form(...),
-    hostname: str = Form(...),
-    ip_address: str = Form(""),
-    group_name: str = Form(""),
-) -> RedirectResponse:
+@router.get("/inventory")
+def inventory_redirect() -> RedirectResponse:
+    return RedirectResponse("/assets", status_code=303)
+
+
+@router.post("/assets/new")
+async def assets_new(request: Request) -> RedirectResponse:
     me = get_session_user(request)
     if not me:
         raise login_redirect()
+    form = await request.form()
+    custom = {k[3:]: v for k, v in form.items() if k.startswith("cf_")}
+    asset_type_raw = form.get("asset_type_id", "")
+    parent_raw = form.get("parent_asset_id", "")
+    user_raw = form.get("assigned_user_id", "")
     try:
-        inv_svc.create_item(asset_type_id, hostname, ip_address, group_name)
-    except Exception:
-        return RedirectResponse("/inventory?error=1", status_code=303)
-    return RedirectResponse("/inventory", status_code=303)
+        inv_svc.create_item(
+            str(form.get("name", "")),
+            str(form.get("description", "")),
+            asset_type_id=int(asset_type_raw) if str(asset_type_raw).isdigit() else None,
+            parent_asset_id=int(parent_raw) if str(parent_raw).isdigit() else None,
+            assigned_user_id=int(user_raw) if str(user_raw).isdigit() else None,
+            external_inventory=form.get("external_inventory") == "1",
+            custom_fields=custom or None,
+        )
+    except (ValueError, Exception):
+        return RedirectResponse("/assets?error=1", status_code=303)
+    return RedirectResponse("/assets", status_code=303)
 
 
-@router.post("/inventory/{item_id}/edit")
-def inventory_edit(
-    request: Request,
-    item_id: int,
-    asset_type_id: int = Form(...),
-    hostname: str = Form(...),
-    ip_address: str = Form(""),
-    group_name: str = Form(""),
-) -> RedirectResponse:
+@router.post("/assets/{item_id}/edit")
+async def assets_edit(request: Request, item_id: int) -> RedirectResponse:
     me = get_session_user(request)
     if not me:
         raise login_redirect()
-    inv_svc.update_item(
-        item_id,
-        asset_type_id=asset_type_id,
-        hostname=hostname,
-        ip_address=ip_address,
-        group_name=group_name,
-    )
-    return RedirectResponse("/inventory", status_code=303)
+    form = await request.form()
+    custom = {k[3:]: v for k, v in form.items() if k.startswith("cf_")}
+    asset_type_raw = form.get("asset_type_id", "")
+    parent_raw = form.get("parent_asset_id", "")
+    user_raw = form.get("assigned_user_id", "")
+    try:
+        inv_svc.update_item(
+            item_id,
+            name=str(form.get("name", "")),
+            description=str(form.get("description", "")),
+            asset_type_id=int(asset_type_raw) if str(asset_type_raw).isdigit() else None,
+            parent_asset_id=int(parent_raw) if str(parent_raw).isdigit() else None,
+            clear_parent=not str(parent_raw).isdigit(),
+            assigned_user_id=int(user_raw) if str(user_raw).isdigit() else None,
+            clear_assigned_user=not str(user_raw).isdigit(),
+            external_inventory=form.get("external_inventory") == "1",
+            custom_fields=custom if custom else None,
+        )
+    except ValueError:
+        return RedirectResponse("/assets?error=1", status_code=303)
+    return RedirectResponse("/assets", status_code=303)
 
 
-@router.post("/inventory/{item_id}/delete")
-def inventory_delete(request: Request, item_id: int) -> RedirectResponse:
+@router.post("/assets/{item_id}/delete")
+def assets_delete(request: Request, item_id: int) -> RedirectResponse:
     me = get_session_user(request)
     if not me:
         raise login_redirect()
     try:
         inv_svc.delete_item(item_id)
     except Exception:
-        return RedirectResponse("/inventory?error=fk", status_code=303)
-    return RedirectResponse("/inventory", status_code=303)
+        return RedirectResponse("/assets?error=fk", status_code=303)
+    return RedirectResponse("/assets", status_code=303)
+
+
+@router.get("/requests", response_class=HTMLResponse)
+def requests_page(
+    request: Request,
+    q: str | None = None,
+    status: str | None = None,
+    open_only: str | None = None,
+) -> HTMLResponse:
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
+    is_open = open_only == "1" or (open_only is None and status is None)
+    rows = req_svc.list_requests(
+        status=status if not is_open else None,
+        open_only=is_open and status is None,
+        q=q,
+    )
+    templates_list = rtpl_svc.list_request_templates()
+    return templates.TemplateResponse(
+        request,
+        "requests.html",
+        _page(
+            request,
+            user,
+            requests=rows,
+            q=q or "",
+            status_filter=status or "",
+            open_only=is_open,
+            request_templates=templates_list,
+        ),
+    )
+
+
+@router.post("/requests/new")
+def requests_new(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form(...),
+    request_template_id: str = Form(""),
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    tpl_id = int(request_template_id) if request_template_id.isdigit() else None
+    try:
+        req_svc.create_request(
+            requester_user_id=me["id"],
+            name=name.strip(),
+            description=description.strip(),
+            request_template_id=tpl_id,
+        )
+    except ValueError:
+        return RedirectResponse("/requests?error=1", status_code=303)
+    return RedirectResponse("/requests", status_code=303)
+
+
+@router.get("/requests/{request_ref}", response_class=HTMLResponse)
+def request_detail_fragment(request: Request, request_ref: str) -> HTMLResponse:
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
+    detail = req_svc.get_request_detail(request_ref)
+    if not detail:
+        raise HTTPException(404, "Not found")
+    catalog = rtpl_svc.list_request_templates()
+    return templates.TemplateResponse(
+        request,
+        "request_detail_fragment.html",
+        _page(request, user, service_request=detail, request_templates=catalog),
+    )
+
+
+@router.post("/requests/{request_ref}/ritm")
+def request_add_ritm(
+    request: Request,
+    request_ref: str,
+    catalog_item_id: str = Form(""),
+    item_type: str = Form(""),
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    cid: int | None = int(catalog_item_id) if catalog_item_id.isdigit() else None
+    try:
+        req_svc.add_ritm_to_request(
+            request_ref,
+            request_template_id=cid,
+            item_type=item_type.strip(),
+            actor_user_id=me["id"],
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return RedirectResponse("/requests", status_code=303)
+
+
+@router.post("/requests/{request_ref}/submit")
+def request_submit(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    request_ref: str,
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    try:
+        snap = wf_svc.submit_request(request_ref, me["id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "request", "submitted", me["username"], snap
+    )
+    return RedirectResponse("/requests", status_code=303)
+
+
+@router.post("/requests/{request_ref}/cancel")
+def request_cancel(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    request_ref: str,
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    try:
+        snap = req_svc.cancel_request(request_ref, me["id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "request", "cancelled", me["username"], snap
+    )
+    return RedirectResponse("/requests", status_code=303)
+
+
+@router.get("/changes", response_class=HTMLResponse)
+def changes_page(
+    request: Request,
+    status: str | None = None,
+    open_only: str | None = None,
+) -> HTMLResponse:
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
+    if status:
+        rows = chg_svc.list_changes(status=status, open_only=False)
+        is_open = False
+    else:
+        is_open = open_only != "0" if open_only is not None else True
+        rows = chg_svc.list_changes(status=None, open_only=is_open)
+    change_templates_list = ctpl_svc.list_change_templates()
+    template_fields = {
+        str(t["id"]): cf_svc.list_definitions("change_template", t["id"])
+        for t in change_templates_list
+    }
+    return templates.TemplateResponse(
+        request,
+        "changes.html",
+        _page(
+            request,
+            user,
+            changes=rows,
+            status_filter=status or "",
+            open_only=is_open,
+            change_templates=change_templates_list,
+            template_fields=template_fields,
+        ),
+    )
+
+
+@router.get("/changes/{change_ref}", response_class=HTMLResponse)
+def change_detail_fragment(request: Request, change_ref: str) -> HTMLResponse:
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
+    detail = chg_svc.get_change_detail(change_ref)
+    if not detail:
+        raise HTTPException(404, "Not found")
+    return templates.TemplateResponse(
+        request,
+        "change_detail_fragment.html",
+        _page(request, user, change=detail),
+    )
+
+
+@router.post("/changes/{change_ref}/approve")
+def change_approve(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    change_ref: str,
+) -> RedirectResponse:
+    me = require_admin_session(request)
+    try:
+        snap = chg_svc.approve_change(change_ref, me["id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "change", "approved", me["username"], snap
+    )
+    return RedirectResponse("/changes", status_code=303)
+
+
+@router.post("/changes/{change_ref}/tasks/{ctask_ref}/start")
+def ctask_start_ui(request: Request, change_ref: str, ctask_ref: str) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    try:
+        chg_svc.start_ctask(change_ref, ctask_ref, me["id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return RedirectResponse("/changes", status_code=303)
+
+
+@router.post("/changes/{change_ref}/tasks/{ctask_ref}/complete")
+def ctask_complete_ui(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    change_ref: str,
+    ctask_ref: str,
+    completion_comment: str = Form(""),
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    try:
+        snap = wf_svc.on_ctask_completed(
+            change_ref, ctask_ref, me["id"], completion_comment=completion_comment
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "change", "ctask_completed", me["username"], snap
+    )
+    return RedirectResponse("/changes", status_code=303)
+
+
+@router.post("/tasks/{task_ref}/start")
+def task_start_ui(request: Request, task_ref: str) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    try:
+        task_svc.start_task(task_ref, me["id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return RedirectResponse("/tasks", status_code=303)
+
+
+@router.post("/tasks/{task_ref}/complete")
+def task_complete_ui(
+    request: Request,
+    task_ref: str,
+    completion_comment: str = Form(""),
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    try:
+        task_svc.complete_task(task_ref, me["id"], completion_comment=completion_comment)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return RedirectResponse("/tasks", status_code=303)
+
+
+@router.post("/changes/new")
+async def changes_new_ui(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    change_template_id: int = Form(...),
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    form = await request.form()
+    custom = {k[3:]: v for k, v in form.items() if k.startswith("cf_")}
+    try:
+        snap = chg_svc.create_change_from_template(
+            change_template_id=change_template_id,
+            custom_fields=custom,
+            actor_user_id=me["id"],
+        )
+        if snap.get("change_type") == "standard":
+            snap = chg_svc.auto_approve_change(snap["id"], me["id"])
+            wh_svc.schedule_workflow_webhook(
+                background_tasks, "change", "approved", me["username"], snap
+            )
+        else:
+            snap = chg_svc.set_change_pending_approval(snap["id"], me["id"])
+            wh_svc.schedule_workflow_webhook(
+                background_tasks, "change", "pending_approval", me["username"], snap
+            )
+        wh_svc.schedule_workflow_webhook(
+            background_tasks, "change", "created", me["username"], snap
+        )
+    except ValueError as e:
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/changes?error={quote(str(e))}", status_code=303)
+    return RedirectResponse("/changes", status_code=303)
+
+
+@router.get("/tasks", response_class=HTMLResponse)
+def tasks_page(
+    request: Request,
+    status: str | None = None,
+    open_only: str | None = None,
+    q: str | None = None,
+) -> HTMLResponse:
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
+    if status:
+        rows = task_svc.list_tasks(status=status, open_only=False, q=q)
+        is_open = False
+    else:
+        is_open = open_only != "0" if open_only is not None else True
+        rows = task_svc.list_tasks(status=None, open_only=is_open, q=q)
+    changes = chg_svc.list_changes(open_only=True)
+    task_templates_list = ttpl_svc.list_task_templates()
+    users = usr_svc.list_users()
+    return templates.TemplateResponse(
+        request,
+        "tasks.html",
+        _page(
+            request,
+            user,
+            tasks=rows,
+            status_filter=status or "",
+            open_only=is_open,
+            q=q or "",
+            changes=changes,
+            task_templates=task_templates_list,
+            users=users,
+        ),
+    )
+
+
+@router.get("/tasks/{task_ref}", response_class=HTMLResponse)
+def task_detail_fragment(request: Request, task_ref: str) -> HTMLResponse:
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
+    detail = task_svc.get_task_detail(task_ref)
+    if not detail:
+        raise HTTPException(404, "Not found")
+    return templates.TemplateResponse(
+        request,
+        "task_detail_fragment.html",
+        _page(request, user, task=detail),
+    )
+
+
+@router.post("/tasks/new")
+def tasks_new_ui(
+    request: Request,
+    change_ref: str = Form(""),
+    title: str = Form(""),
+    task_template_id: str = Form(""),
+    description: str = Form(""),
+    assigned_user_id: str = Form(""),
+    kb_article_id: str = Form(""),
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    tpl_id = int(task_template_id) if task_template_id.isdigit() else None
+    kid = int(kb_article_id) if kb_article_id.isdigit() else None
+    uid = int(assigned_user_id) if assigned_user_id.isdigit() else None
+    cref = change_ref.strip() or None
+    try:
+        task_svc.create_task(
+            change_ref=cref,
+            title=title.strip(),
+            description=description.strip(),
+            assigned_user_id=uid,
+            kb_article_id=kid,
+            task_template_id=tpl_id,
+            actor_user_id=me["id"],
+        )
+    except ValueError:
+        return RedirectResponse("/tasks?error=1", status_code=303)
+    return RedirectResponse("/tasks", status_code=303)
+
+
+@router.get("/request-templates", response_class=HTMLResponse)
+def request_templates_page(request: Request) -> HTMLResponse:
+    user = require_admin_session(request)
+    items = rtpl_svc.list_request_templates()
+    change_tpls = ctpl_svc.list_change_templates()
+    return templates.TemplateResponse(
+        request,
+        "request_templates.html",
+        _page(request, user, templates=items, change_templates=change_tpls),
+    )
+
+
+@router.post("/request-templates/new")
+def request_templates_new(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form(...),
+    change_template_id: str = Form(""),
+    require_standard_change: str = Form("1"),
+) -> RedirectResponse:
+    require_admin_session(request)
+    ct_id = int(change_template_id) if change_template_id.isdigit() else None
+    try:
+        rtpl_svc.create_request_template(
+            name=name.strip(),
+            description=description.strip(),
+            change_template_id=ct_id,
+            require_standard_change=require_standard_change == "1",
+        )
+    except ValueError:
+        return RedirectResponse("/request-templates?error=1", status_code=303)
+    return RedirectResponse("/request-templates", status_code=303)
+
+
+@router.post("/request-templates/{template_id}/delete")
+def request_templates_delete(request: Request, template_id: int) -> RedirectResponse:
+    require_admin_session(request)
+    rtpl_svc.delete_request_template(template_id)
+    return RedirectResponse("/request-templates", status_code=303)
+
+
+@router.post("/request-templates/{template_id}/fields/new")
+def request_template_field_new(
+    request: Request,
+    template_id: int,
+    field_key: str = Form(...),
+    label: str = Form(...),
+    field_type: str = Form("text"),
+    required: str = Form(""),
+    options: str = Form(""),
+) -> RedirectResponse:
+    require_admin_session(request)
+    opts = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        cf_svc.create_definition(
+            scope_type="request_template",
+            scope_id=template_id,
+            field_key=field_key,
+            label=label,
+            field_type=field_type,
+            required=required == "1",
+            options=opts,
+        )
+    except ValueError:
+        return RedirectResponse("/request-templates?error=field", status_code=303)
+    return RedirectResponse("/request-templates", status_code=303)
+
+
+@router.post("/request-templates/{template_id}/fields/{field_id}/delete")
+def request_template_field_delete(
+    request: Request, template_id: int, field_id: int
+) -> RedirectResponse:
+    require_admin_session(request)
+    cf_svc.delete_definition(field_id)
+    return RedirectResponse("/request-templates", status_code=303)
+
+
+@router.get("/change-templates", response_class=HTMLResponse)
+def change_templates_page(request: Request) -> HTMLResponse:
+    user = require_admin_session(request)
+    items = ctpl_svc.list_change_templates()
+    task_tpls = ttpl_svc.list_task_templates()
+    return templates.TemplateResponse(
+        request,
+        "change_templates.html",
+        _page(request, user, templates=items, task_templates=task_tpls),
+    )
+
+
+@router.post("/change-templates/new")
+def change_templates_new(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form(...),
+    change_type: str = Form("standard"),
+    task_template_ids: list[int] = Form([]),
+) -> RedirectResponse:
+    require_admin_session(request)
+    try:
+        ctpl_svc.create_change_template(
+            name=name.strip(),
+            description=description.strip(),
+            change_type=change_type,
+            task_template_ids=task_template_ids,
+        )
+    except ValueError:
+        return RedirectResponse("/change-templates?error=1", status_code=303)
+    return RedirectResponse("/change-templates", status_code=303)
+
+
+@router.post("/change-templates/{template_id}/delete")
+def change_templates_delete(request: Request, template_id: int) -> RedirectResponse:
+    require_admin_session(request)
+    try:
+        ctpl_svc.delete_change_template(template_id)
+    except ValueError:
+        return RedirectResponse("/change-templates?error=ref", status_code=303)
+    return RedirectResponse("/change-templates", status_code=303)
+
+
+@router.post("/change-templates/{template_id}/fields/new")
+def change_template_field_new(
+    request: Request,
+    template_id: int,
+    field_key: str = Form(...),
+    label: str = Form(...),
+    field_type: str = Form("text"),
+    required: str = Form(""),
+    options: str = Form(""),
+) -> RedirectResponse:
+    require_admin_session(request)
+    opts = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        cf_svc.create_definition(
+            scope_type="change_template",
+            scope_id=template_id,
+            field_key=field_key,
+            label=label,
+            field_type=field_type,
+            required=required == "1",
+            options=opts,
+        )
+    except ValueError:
+        return RedirectResponse("/change-templates?error=field", status_code=303)
+    return RedirectResponse("/change-templates", status_code=303)
+
+
+@router.post("/change-templates/{template_id}/fields/{field_id}/delete")
+def change_template_field_delete(
+    request: Request, template_id: int, field_id: int
+) -> RedirectResponse:
+    require_admin_session(request)
+    cf_svc.delete_definition(field_id)
+    return RedirectResponse("/change-templates", status_code=303)
+
+
+@router.get("/task-templates", response_class=HTMLResponse)
+def task_templates_page(request: Request) -> HTMLResponse:
+    user = require_admin_session(request)
+    items = ttpl_svc.list_task_templates()
+    articles = kb_svc.list_articles()
+    users = usr_svc.list_users()
+    return templates.TemplateResponse(
+        request,
+        "task_templates.html",
+        _page(request, user, templates=items, kb_articles=articles, users=users),
+    )
+
+
+@router.post("/task-templates/new")
+def task_templates_new(
+    request: Request,
+    name: str = Form(...),
+    title: str = Form(...),
+    description: str = Form(""),
+    assigned_user_id: str = Form(""),
+    kb_article_id: str = Form(""),
+) -> RedirectResponse:
+    require_admin_session(request)
+    kid = int(kb_article_id) if kb_article_id.isdigit() else None
+    uid = int(assigned_user_id) if assigned_user_id.isdigit() else None
+    try:
+        ttpl_svc.create_task_template(
+            name=name.strip(),
+            title=title.strip(),
+            description=description.strip(),
+            assigned_user_id=uid,
+            kb_article_id=kid,
+        )
+    except ValueError:
+        return RedirectResponse("/task-templates?error=1", status_code=303)
+    return RedirectResponse("/task-templates", status_code=303)
+
+
+@router.post("/task-templates/{template_id}/delete")
+def task_templates_delete(request: Request, template_id: int) -> RedirectResponse:
+    require_admin_session(request)
+    ttpl_svc.delete_task_template(template_id)
+    return RedirectResponse("/task-templates", status_code=303)
+
+
+@router.post("/task-templates/{template_id}/fields/new")
+def task_template_field_new(
+    request: Request,
+    template_id: int,
+    field_key: str = Form(...),
+    label: str = Form(...),
+    field_type: str = Form("text"),
+    required: str = Form(""),
+    options: str = Form(""),
+) -> RedirectResponse:
+    require_admin_session(request)
+    opts = [o.strip() for o in options.split(",") if o.strip()]
+    try:
+        cf_svc.create_definition(
+            scope_type="task_template",
+            scope_id=template_id,
+            field_key=field_key,
+            label=label,
+            field_type=field_type,
+            required=required == "1",
+            options=opts,
+        )
+    except ValueError:
+        return RedirectResponse("/task-templates?error=field", status_code=303)
+    return RedirectResponse("/task-templates", status_code=303)
+
+
+@router.post("/task-templates/{template_id}/fields/{field_id}/delete")
+def task_template_field_delete(
+    request: Request, template_id: int, field_id: int
+) -> RedirectResponse:
+    require_admin_session(request)
+    cf_svc.delete_definition(field_id)
+    return RedirectResponse("/task-templates", status_code=303)
+
+
+@router.get("/service-catalog")
+def service_catalog_redirect() -> RedirectResponse:
+    return RedirectResponse("/request-templates", status_code=303)

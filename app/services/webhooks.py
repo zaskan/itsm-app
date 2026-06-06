@@ -138,6 +138,44 @@ async def _post_one(client: httpx.AsyncClient, url: str, payload: dict[str, Any]
 
 
 async def dispatch_webhook(event: str, actor_username: str, incident_snapshot: dict[str, Any]) -> None:
+    await dispatch_workflow_webhook(event, actor_username, {"incident": incident_snapshot})
+
+
+def workflow_event_name(entity: str, internal: str) -> str:
+    known = {
+        ("request", "submitted"): "request.submitted",
+        ("request", "fulfilled"): "request.fulfilled",
+        ("request", "cancelled"): "request.cancelled",
+        ("request", "created"): "request.created",
+        ("change", "created"): "change.created",
+        ("change", "approved"): "change.approved",
+        ("change", "completed"): "change.completed",
+        ("change", "cancelled"): "change.cancelled",
+        ("change", "pending_approval"): "change.pending_approval",
+        ("change", "ctask_completed"): "change.ctask_completed",
+    }
+    return known.get((entity, internal), f"{entity}.{internal}")
+
+
+def schedule_workflow_webhook(
+    background_tasks: BackgroundTasks,
+    entity: str,
+    internal_event: str,
+    actor_username: str,
+    snapshot: dict[str, Any],
+    *,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    ev = workflow_event_name(entity, internal_event)
+    payload_data = {entity: snapshot}
+    if extra:
+        payload_data.update(extra)
+    background_tasks.add_task(dispatch_workflow_webhook, ev, actor_username, payload_data)
+
+
+async def dispatch_workflow_webhook(
+    event: str, actor_username: str, data: dict[str, Any]
+) -> None:
     targets = _enabled_urls()
     if not targets:
         return
@@ -145,7 +183,7 @@ async def dispatch_webhook(event: str, actor_username: str, incident_snapshot: d
         "event": event,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "actor": actor_username,
-        "incident": incident_snapshot,
+        **data,
     }
     async with httpx.AsyncClient(timeout=15.0) as client:
         await asyncio.gather(

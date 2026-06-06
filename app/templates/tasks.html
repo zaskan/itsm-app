@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% set active_nav = 'tasks' %}
+{% block title %}Tasks — {{ app_title }}{% endblock %}
+{% block page_heading %}Tasks{% endblock %}
+
+{% block header_actions %}
+<button type="button" onclick="document.getElementById('new-modal').classList.remove('hidden')"
+  class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-hover">
+  + New task
+</button>
+{% endblock %}
+
+{% block content %}
+<form method="get" action="/tasks" class="flex flex-wrap gap-3 mb-6 items-end">
+  <input type="hidden" name="open_only" value="{% if status_filter %}0{% else %}1{% endif %}" />
+  <div>
+    <label class="text-xs font-medium text-slate-500 uppercase">Status</label>
+    <select name="status" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+      <option value="">Open (default)</option>
+      {% for s in ['blocked','pending','in_progress','completed'] %}
+      <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s | replace('_',' ') | title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="rounded-lg bg-slate-700 text-white px-4 py-2 text-sm h-[38px]">Apply</button>
+</form>
+
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+  <table class="w-full text-left text-sm">
+    <thead class="bg-slate-50 text-slate-600 border-b">
+      <tr>
+        <th class="px-4 py-3">Task</th>
+        <th class="px-4 py-3">Change</th>
+        <th class="px-4 py-3">Status</th>
+        <th class="px-4 py-3">User</th>
+        <th class="px-4 py-3">KB</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for row in tasks %}
+      <tr class="hover:bg-slate-50/80 cursor-pointer detail-trigger" data-ref="{{ row.public_id }}">
+        <td class="px-4 py-4 font-mono text-primary">{{ row.public_id }}<br/><span class="text-slate-700 font-sans">{{ row.title }}</span></td>
+        <td class="px-4 py-4 font-mono text-slate-600">{{ row.change_public_id or '—' }}</td>
+        <td class="px-4 py-4">{{ row.status | replace('_',' ') | title }}</td>
+        <td class="px-4 py-4">{{ row.assigned_username or '—' }}</td>
+        <td class="px-4 py-4 text-slate-600">{{ row.kb_article_title or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No open tasks.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div id="new-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+    <h3 class="text-lg font-semibold mb-4">New task</h3>
+    <form method="post" action="/tasks/new" class="space-y-3">
+      <label class="block text-xs font-medium text-slate-500 uppercase mb-1">Change (optional)</label>
+      <select name="change_ref" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <option value="">— No change —</option>
+        {% for c in changes %}
+        <option value="{{ c.public_id }}">{{ c.public_id }} ({{ c.status }})</option>
+        {% endfor %}
+      </select>
+      <select name="task_template_id" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <option value="">— Custom task —</option>
+        {% for t in task_templates %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      <input name="title" placeholder="Title (if custom)" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      <textarea name="description" rows="2" placeholder="Description" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+      <select name="assigned_user_id" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <option value="">— Unassigned —</option>
+        {% for u in users %}
+        <option value="{{ u.id }}">{{ u.username }}</option>
+        {% endfor %}
+      </select>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Create</button>
+        <button type="button" onclick="document.getElementById('new-modal').classList.add('hidden')" class="rounded-lg border px-4 py-2 text-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
+  <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full my-8 p-6 relative">
+    <button type="button" onclick="document.getElementById('detail-modal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 text-xl">&times;</button>
+    <div id="detail-modal-body"></div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.detail-trigger').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ref = btn.getAttribute('data-ref');
+      const box = document.getElementById('detail-modal-body');
+      box.innerHTML = '<p class="text-slate-500 text-sm">Loading…</p>';
+      document.getElementById('detail-modal').classList.remove('hidden');
+      const r = await fetch('/tasks/' + encodeURIComponent(ref));
+      box.innerHTML = await r.text();
+    });
+  });
+</script>
+{% endblock %}

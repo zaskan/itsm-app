@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% set active_nav = 'request_templates' %}
+{% block title %}Request templates — {{ app_title }}{% endblock %}
+{% block page_heading %}Service request templates{% endblock %}
+
+{% block content %}
+<p class="text-slate-600 text-sm mb-6">Define request templates with custom fields and linked standard change templates.</p>
+
+<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 max-w-3xl">
+  <h3 class="text-sm font-semibold text-slate-800 mb-3">Add request template</h3>
+  <form method="post" action="/request-templates/new" class="space-y-3">
+    <input name="name" required placeholder="Name" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+    <textarea name="description" rows="2" required placeholder="Description" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+    <select name="change_template_id" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      <option value="">— No change template —</option>
+      {% for ct in change_templates %}
+      <option value="{{ ct.id }}">{{ ct.name }} ({{ ct.change_type }})</option>
+      {% endfor %}
+    </select>
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="require_standard_change" value="1" checked /> Require standard change</label>
+    <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Add template</button>
+  </form>
+</div>
+
+<div class="space-y-4 max-w-3xl">
+  {% for item in templates %}
+  <div class="bg-white rounded-xl border border-slate-200 p-4">
+    <div class="flex justify-between gap-3">
+      <div class="flex-1">
+        <h3 class="font-semibold text-slate-900">{{ item.name }}</h3>
+        <p class="text-sm text-slate-600 mt-1">{{ item.description }}</p>
+        <p class="text-xs text-slate-500 mt-2">
+          Change template: {{ item.change_template_name or '—' }}
+          {% if item.require_standard_change %} · Standard required{% endif %}
+          · {{ item.field_definitions | length }} field(s)
+        </p>
+        {% with fields=item.field_definitions, add_action='/request-templates/' ~ item.id ~ '/fields/new', delete_prefix='/request-templates/' ~ item.id ~ '/fields' %}
+        {% include '_field_builder.html' %}
+        {% endwith %}
+      </div>
+      <form method="post" action="/request-templates/{{ item.id }}/delete" onsubmit="return confirm('Delete template?');">
+        <button type="submit" class="text-sm text-red-600 hover:underline">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-500">No request templates yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

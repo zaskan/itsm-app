@@ -4,6 +4,18 @@
 {% block page_heading %}Settings{% endblock %}
 
 {% block content %}
+{% if purged %}
+<div class="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+  All application data was deleted. Admin account(s) and default settings were restored.
+</div>
+{% elif purge_error == 'purge_confirm' %}
+<div class="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+  Purge cancelled: type <span class="font-mono font-semibold">DELETE ALL DATA</span> exactly to confirm.
+</div>
+{% elif purge_error %}
+<div class="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ purge_error }}</div>
+{% endif %}
+
 <p class="text-slate-600 text-sm mb-6">Branding &amp; appearance: custom title, logotype, and sidebar colors. Admin only. Changes apply to all users (stored on the server).</p>
 
 <section class="mb-8">
@@ -81,4 +93,44 @@
     </div>
   </div>
 </section>
+
+<section class="mb-8 max-w-2xl">
+  <h2 class="text-sm font-semibold text-red-600 uppercase tracking-wide mb-3">Danger zone</h2>
+  <div class="rounded-xl border-2 border-red-300 bg-red-50/50 p-6 space-y-4">
+    <p class="text-sm text-slate-800 font-medium">Delete all application data</p>
+    <p class="text-sm text-slate-600">
+      Permanently removes all incidents, assets, knowledge base articles, service requests, changes, tasks,
+      templates, custom fields, webhooks, branding settings, and non-admin users.
+      <strong class="text-slate-800">Admin account(s) are kept.</strong> Default title and branding are restored.
+      This cannot be undone.
+    </p>
+    <form method="post" action="/settings/purge-data" class="space-y-3" id="purge-form"
+      onsubmit="return confirm('This will permanently delete all data except admin users. Continue?');">
+      <div>
+        <label class="text-sm font-medium text-slate-700">
+          Type <span class="font-mono text-red-700">DELETE ALL DATA</span> to confirm
+        </label>
+        <input type="text" name="confirm" id="purge-confirm" autocomplete="off"
+          placeholder="DELETE ALL DATA"
+          class="mt-1 w-full rounded-lg border border-red-300 px-3 py-2 text-sm bg-white" />
+      </div>
+      <button type="submit" id="purge-submit" disabled
+        class="rounded-lg bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed">
+        Delete all data
+      </button>
+    </form>
+  </div>
+</section>
+
+<script>
+  (function () {
+    const phrase = 'DELETE ALL DATA';
+    const input = document.getElementById('purge-confirm');
+    const btn = document.getElementById('purge-submit');
+    if (!input || !btn) return;
+    input.addEventListener('input', function () {
+      btn.disabled = input.value !== phrase;
+    });
+  })();
+</script>
 {% endblock %}

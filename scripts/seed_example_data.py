@@ -28,6 +28,10 @@ from app.services import asset_types as at_svc
 from app.services import incidents as inc_svc
 from app.services import inventory as inv_svc
 from app.services import kb as kb_svc
+from app.services import change_templates as ctpl_svc
+from app.services import custom_fields as cf_svc
+from app.services import request_templates as rtpl_svc
+from app.services import task_templates as ttpl_svc
 
 ACTOR_ID = 1
 
@@ -89,7 +93,7 @@ INCIDENT_TEMPLATES: list[tuple[str, str, str]] = [
     ("Disk SMART warning", "Replace SSD scheduled during maintenance.", "medium"),
     ("Cluster node NotReady", "Kubelet cert rotated; node cordoned for drain.", "critical"),
     ("Patch reboot loop", "Boot driver conflict; safe mode uninstall.", "high"),
-    ("Inventory sync mismatch", "Asset tag scanned twice; CMDB reconciliation.", "low"),
+    ("Inventory sync mismatch", "Asset tag scanned twice; asset reconciliation.", "low"),
     ("Power outage — branch", "UPS exhausted; generator refuel in progress.", "critical"),
     ("Database lock escalation", "Long transaction killed; app vendor engaged.", "critical"),
     ("Malware alert — isolated host", "EDR containment; forensic image captured.", "high"),
@@ -110,6 +114,20 @@ INCIDENT_TEMPLATES: list[tuple[str, str, str]] = [
     ("Emergency change approved", "Hotfix for payment API timeout.", "critical"),
     ("Service restart during lunch", "Quick mitigation for memory leak pending patch.", "medium"),
 ]
+
+WORKFLOW_KB: list[tuple[str, str]] = [
+    ("Provision Linux VM on hypervisor", "Steps: select datastore, apply CPU/RAM/disk template, attach network port group, register in DNS."),
+    ("Install Python and Docker packages", "Use automation: apt/yum install python3.11, docker.io; enable and start docker; verify with python --version and docker ps."),
+    ("Deploy Sales-App v2.0", "Pull container image, apply config map, run health check on /healthz, register in service mesh if applicable."),
+    ("Smoke tests and monitoring onboarding", "Run connectivity ping, app login test, verify metrics in monitoring dashboard, create alert rules."),
+]
+
+LINUX_VM_CATALOG = {
+    "name": "New Linux Virtual Machine",
+    "description": "Standard Linux VM with packages and optional application deployment.",
+    "default_change_type": "standard",
+    "default_specs": {"vcpu": 2, "ram_gb": 4, "storage_gb": 50, "hostname": "srv-sales-01", "ip": "10.0.1.50"},
+}
 
 
 def main() -> None:
@@ -143,19 +161,36 @@ def main() -> None:
     for title, body in KB_ARTICLES:
         kb_svc.create_article(title, body)
 
-    # 60 inventory rows — 3 hosts per type (cycles through types)
-    groups = ["corp", "branch", "dmz", "lab", "prod"]
+    # 60 assets — 3 per type (cycles through types)
     idx = 0
     inv_ids: list[int] = []
     for _ in range(60):
         tid = type_ids[idx % len(type_ids)]
         idx += 1
         host_num = (idx // len(type_ids)) + (idx % 7)
-        hostname = f"host-{tid}-{host_num:02d}"
-        ip = f"10.{(tid % 200) + 1}.{(idx % 200) + 1}.{((idx * 3) % 200) + 1}"
-        grp = groups[idx % len(groups)]
-        row = inv_svc.create_item(tid, hostname, ip, grp)
+        name = f"host-{tid}-{host_num:02d}"
+        desc = f"Example asset for type id {tid}"
+        row = inv_svc.create_item(
+            name,
+            desc,
+            asset_type_id=tid,
+            external_inventory=(idx % 5 == 0),
+        )
         inv_ids.append(row["id"])
+
+    if len(inv_ids) >= 2:
+        server = inv_svc.create_item(
+            "PhysicalHost-Node03",
+            "Bare-metal server hosting application workloads",
+            asset_type_id=type_ids[4] if len(type_ids) > 4 else type_ids[0],
+            external_inventory=True,
+        )
+        inv_svc.create_item(
+            "Sales-App v2.0",
+            "Sales application deployed on PhysicalHost-Node03",
+            asset_type_id=type_ids[12] if len(type_ids) > 12 else type_ids[0],
+            parent_asset_id=server["id"],
+        )
 
     # 40 incidents — rotate severities and optionally link inventory
     rng = random.Random(42)
@@ -175,8 +210,49 @@ def main() -> None:
             inventory_asset_id=asset_id,
         )
 
+    # Workflow: KB for CTASKs and request template chain
+    kb_ids: list[int] = []
+    for title, body in WORKFLOW_KB:
+        art = kb_svc.create_article(title, body)
+        kb_ids.append(art["id"])
+
+    existing_catalog = {c["name"] for c in rtpl_svc.list_request_templates()}
+    if LINUX_VM_CATALOG["name"] not in existing_catalog:
+        task_tpl_ids: list[int] = []
+        for i, t in enumerate(WORKFLOW_KB):
+            tt = ttpl_svc.create_task_template(
+                name=f"Linux VM — {t[0][:40]}",
+                title=t[0],
+                description=t[1][:80],
+                assigned_user_id=ACTOR_ID,
+                kb_article_id=kb_ids[i] if i < len(kb_ids) else None,
+            )
+            task_tpl_ids.append(tt["id"])
+        chg_tpl = ctpl_svc.create_change_template(
+            name="Linux VM — Standard Change",
+            description=LINUX_VM_CATALOG["description"],
+            change_type=LINUX_VM_CATALOG["default_change_type"],
+            task_template_ids=task_tpl_ids,
+        )
+        req_tpl = rtpl_svc.create_request_template(
+            name=LINUX_VM_CATALOG["name"],
+            description=LINUX_VM_CATALOG["description"],
+            change_template_id=chg_tpl["id"],
+            require_standard_change=True,
+        )
+        for key, val in LINUX_VM_CATALOG["default_specs"].items():
+            ftype = "number" if isinstance(val, (int, float)) else "text"
+            cf_svc.create_definition(
+                scope_type="request_template",
+                scope_id=req_tpl["id"],
+                field_key=key,
+                label=key.replace("_", " ").title(),
+                field_type=ftype,
+            )
+
     print(
-        "Done: 20 asset types, 60 inventory items, 10 KB articles, 40 incidents "
+        "Done: 20 asset types, 60 assets, 10 KB articles, 40 incidents, "
+        "workflow templates "
         f"(database: {os.environ.get('ITSM_DATABASE', './data/itsm.db')})."
     )
 

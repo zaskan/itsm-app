@@ -62,5 +62,8 @@ def update_type(tid: int, name: str | None, description: str | None) -> dict[str
 
 def delete_type(tid: int) -> bool:
     with db.cursor() as cur:
+        from app.services import custom_fields as cf_svc
+
+        cf_svc.delete_definitions_for_scope("asset_type", tid)
         cur.execute("DELETE FROM asset_types WHERE id = ?", (tid,))
         return cur.rowcount > 0

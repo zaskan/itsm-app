@@ -30,9 +30,9 @@ def _asset_summary(cur, asset_id: int | None) -> dict[str, Any] | None:
         return None
     cur.execute(
         """
-        SELECT i.id, i.hostname, i.ip_address, i.group_name, t.name AS asset_type_name
+        SELECT i.id, i.name, i.description, t.name AS asset_type_name
         FROM inventory_assets i
-        JOIN asset_types t ON t.id = i.asset_type_id
+        LEFT JOIN asset_types t ON t.id = i.asset_type_id
         WHERE i.id = ?
         """,
         (asset_id,),
@@ -332,7 +332,7 @@ def list_incidents(
         params.append(date_to + "T23:59:59")
     where = " AND ".join(clauses) if clauses else "1=1"
     sql = f"""
-        SELECT x.*, ia.hostname AS linked_hostname, at.name AS linked_asset_type_name,
+        SELECT x.*, ia.name AS linked_name, at.name AS linked_asset_type_name,
             kb.title AS resolution_kb_title
         FROM incidents x
         LEFT JOIN inventory_assets ia ON ia.id = x.inventory_asset_id

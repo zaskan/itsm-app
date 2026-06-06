@@ -1,0 +1,68 @@
+<div class="space-y-6">
+  <div>
+    <h2 class="text-xl font-semibold text-slate-900">{{ service_request.name or service_request.public_id }}</h2>
+    <p class="text-sm text-slate-500 mt-1 font-mono">{{ service_request.public_id }} · {{ service_request.status | replace('_',' ') | title }} · {{ service_request.requester_username }} · {{ service_request.created_at[:10] }}</p>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+    <div><span class="text-slate-500">Submitted:</span> <span class="text-slate-900">{{ service_request.submitted_at[:10] if service_request.submitted_at else '—' }}</span></div>
+  </div>
+  <p class="text-sm text-slate-700 whitespace-pre-wrap">{{ service_request.description or 'No description provided.' }}</p>
+
+  <div class="border-t border-slate-200 pt-4">
+    <h3 class="text-sm font-semibold text-slate-800 mb-2">Requested items (RITM)</h3>
+    {% if service_request.ritms %}
+    <ul class="space-y-3">
+      {% for r in service_request.ritms %}
+      <li class="rounded-lg border border-slate-200 p-3 text-sm">
+        <p class="font-mono text-primary">{{ r.public_id }}</p>
+        <p class="font-medium text-slate-900 mt-1">{{ r.item_type or r.catalog_item_name or 'Item' }}</p>
+        <p class="text-slate-600 mt-1">Status: {{ r.status | replace('_',' ') | title }}</p>
+        {% if r.change_public_id %}
+        <p class="text-slate-600">Change: <span class="font-mono">{{ r.change_public_id }}</span> ({{ r.change_status | replace('_',' ') | title }})</p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-slate-500 text-sm">No items yet.</p>
+    {% endif %}
+
+    {% if service_request.status == 'draft' %}
+    <form method="post" action="/requests/{{ service_request.public_id }}/ritm" class="mt-4 space-y-2 border-t border-slate-100 pt-4">
+      <p class="text-sm font-medium text-slate-700">Add requested item</p>
+      <select name="catalog_item_id" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <option value="">— Custom item —</option>
+        {% for c in request_templates %}
+        <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+      <input name="item_type" placeholder="Item type (if custom)" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      <button type="submit" class="rounded-lg bg-slate-800 text-white px-3 py-2 text-sm">Add RITM</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if service_request.status == 'draft' and service_request.ritms %}
+  <form method="post" action="/requests/{{ service_request.public_id }}/submit" onsubmit="return confirm('Submit this request? Changes will be created automatically.');">
+    <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium">Submit request</button>
+  </form>
+  {% endif %}
+
+  {% if service_request.status not in ('closed','cancelled') and service_request.status != 'draft' %}
+  <form method="post" action="/requests/{{ service_request.public_id }}/cancel" onsubmit="return confirm('Cancel this request?');">
+    <button type="submit" class="text-sm text-red-600 hover:underline">Cancel request</button>
+  </form>
+  {% endif %}
+
+  <div>
+    <h3 class="text-sm font-semibold text-slate-800 mb-2">Activity</h3>
+    <ul class="text-xs text-slate-600 space-y-1 max-h-32 overflow-y-auto">
+      {% for e in service_request.events %}
+      <li><span class="font-mono text-slate-500">{{ e.created_at }}</span> — {{ e.event_type }} ({{ e.actor_username }})</li>
+      {% else %}
+      <li class="text-slate-500">No activity yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>

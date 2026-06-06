@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% set active_nav = 'assets' %}
+{% block title %}Assets — {{ app_title }}{% endblock %}
+{% block page_heading %}Assets{% endblock %}
+
+{% block header_actions %}
+<button type="button" onclick="document.getElementById('new-item').classList.remove('hidden')"
+  class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-hover">
+  + New asset
+</button>
+{% endblock %}
+
+{% block content %}
+{% if request.query_params.get('error') == '1' %}
+<p class="text-sm text-red-600 mb-4">Could not create asset (check required fields).</p>
+{% elif request.query_params.get('error') == 'fk' %}
+<p class="text-sm text-red-600 mb-4">Cannot delete: one or more incidents still reference this asset.</p>
+{% endif %}
+
+<form method="get" action="/assets" class="mb-6 flex flex-wrap gap-3 items-end">
+  <div class="flex-1 min-w-[12rem]">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search name or description…" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+  </div>
+  <label class="flex items-center gap-2 text-sm text-slate-700 pb-2">
+    <input type="checkbox" name="external_only" value="1" {% if external_only %}checked{% endif %} />
+    External inventory only
+  </label>
+  <button type="submit" class="rounded-lg bg-slate-700 text-white px-4 py-2 text-sm">Search</button>
+</form>
+
+<div id="new-item" class="hidden mb-6 p-4 bg-white rounded-xl border border-slate-200 max-w-xl">
+  <h3 class="text-sm font-semibold text-slate-800 mb-3">New asset</h3>
+  <form method="post" action="/assets/new" class="space-y-3" id="new-asset-form">
+    <div>
+      <label class="text-sm text-slate-700">Name *</label>
+      <input name="name" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+    </div>
+    <div>
+      <label class="text-sm text-slate-700">Description *</label>
+      <textarea name="description" required rows="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+    </div>
+    <div>
+      <label class="text-sm text-slate-700">User (optional)</label>
+      <select name="assigned_user_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <option value="">— None —</option>
+        {% for u in users %}
+        <option value="{{ u.id }}">{{ u.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="text-sm text-slate-700">Asset type (optional)</label>
+      <select name="asset_type_id" id="new-asset-type" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" onchange="renderCustomFields('new')">
+        <option value="">— None —</option>
+        {% for t in asset_types %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="text-sm text-slate-700">Parent asset (optional)</label>
+      <select name="parent_asset_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <option value="">— None —</option>
+        {% for a in all_assets %}
+        <option value="{{ a.id }}">{{ a.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <label class="flex items-center gap-2 text-sm text-slate-700">
+      <input type="checkbox" name="external_inventory" value="1" />
+      Include in external inventory (e.g. Ansible)
+    </label>
+    <div id="new-custom-fields" class="space-y-3"></div>
+    <div class="flex gap-2 pt-1">
+      <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Create</button>
+      <button type="button" class="text-sm text-slate-600" onclick="document.getElementById('new-item').classList.add('hidden')">Cancel</button>
+    </div>
+  </form>
+</div>
+
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-600 border-b">
+      <tr>
+        <th class="px-4 py-3 text-left">Name</th>
+        <th class="px-4 py-3 text-left">Type</th>
+        <th class="px-4 py-3 text-left">Parent</th>
+        <th class="px-4 py-3 text-left">External</th>
+        <th class="px-4 py-3 text-left w-32"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y">
+      {% for it in items %}
+      <tr class="align-top">
+        <td class="px-4 py-4" colspan="5">
+          <form method="post" action="/assets/{{ it.id }}/edit" class="grid sm:grid-cols-12 gap-2 items-end">
+            <div class="sm:col-span-3">
+              <label class="text-xs text-slate-500">Name *</label>
+              <input name="name" value="{{ it.name }}" required class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+            </div>
+            <div class="sm:col-span-3">
+              <label class="text-xs text-slate-500">Description *</label>
+              <input name="description" value="{{ it.description }}" required class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="text-xs text-slate-500">Type</label>
+              <select name="asset_type_id" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
+                <option value="">—</option>
+                {% for t in asset_types %}
+                <option value="{{ t.id }}" {% if t.id == it.asset_type_id %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="text-xs text-slate-500">Parent</label>
+              <select name="parent_asset_id" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
+                <option value="">—</option>
+                {% for a in all_assets %}
+                {% if a.id != it.id %}
+                <option value="{{ a.id }}" {% if a.id == it.parent_asset_id %}selected{% endif %}>{{ a.name }}</option>
+                {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="text-xs text-slate-500">User</label>
+              <select name="assigned_user_id" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm">
+                <option value="">—</option>
+                {% for u in users %}
+                <option value="{{ u.id }}" {% if u.id == it.assigned_user_id %}selected{% endif %}>{{ u.username }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="sm:col-span-2 flex flex-col gap-1">
+              <label class="flex items-center gap-1 text-xs text-slate-600">
+                <input type="checkbox" name="external_inventory" value="1" {% if it.external_inventory %}checked{% endif %} />
+                External
+              </label>
+              {% if it.children_count %}
+              <span class="text-xs text-slate-500">{{ it.children_count }} nested asset(s)</span>
+              {% endif %}
+              <button type="submit" class="rounded bg-slate-800 text-white px-3 py-1.5 text-xs">Save</button>
+            </div>
+            {% set fields = type_fields.get(it.asset_type_id, []) if it.asset_type_id else [] %}
+            {% for f in fields %}
+            <div class="sm:col-span-3">
+              <label class="text-xs text-slate-500">{{ f.label }}{% if f.required %} *{% endif %}</label>
+              <input name="cf_{{ f.field_key }}" value="{{ it.custom_fields.get(f.field_key, '') }}" class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1.5 text-sm" />
+            </div>
+            {% endfor %}
+          </form>
+          <form method="post" action="/assets/{{ it.id }}/delete" class="mt-2" onsubmit="return confirm('Remove this asset?');">
+            <button type="submit" class="text-xs text-red-600 hover:underline">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="px-4 py-10 text-center text-slate-500">No assets yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+const typeFields = {{ type_fields | tojson }};
+function renderCustomFields(prefix) {
+  const sel = document.getElementById(prefix + '-asset-type');
+  const box = document.getElementById(prefix + '-custom-fields');
+  if (!sel || !box) return;
+  const tid = sel.value;
+  const fields = tid ? (typeFields[tid] || []) : [];
+  box.innerHTML = fields.map(f =>
+    '<div><label class="text-sm text-slate-700">' + f.label + (f.required ? ' *' : '') +
+    '</label><input name="cf_' + f.field_key + '" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div>'
+  ).join('');
+}
+renderCustomFields('new');
+</script>
+{% endblock %}

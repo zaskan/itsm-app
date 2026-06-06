@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% set active_nav = 'changes' %}
+{% block title %}Changes — {{ app_title }}{% endblock %}
+{% block page_heading %}Change requests{% endblock %}
+
+{% block header_actions %}
+<button type="button" onclick="document.getElementById('new-modal').classList.remove('hidden')"
+  class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-hover">
+  + New change
+</button>
+{% endblock %}
+
+{% block content %}
+{% if request.query_params.get('error') %}
+<p class="text-sm text-red-600 mb-4">{{ request.query_params.get('error') | replace('+', ' ') }}</p>
+{% endif %}
+
+<form method="get" action="/changes" class="flex flex-wrap gap-3 mb-6 items-end">
+  <input type="hidden" name="open_only" value="{% if status_filter %}0{% else %}1{% endif %}" />
+  <div>
+    <label class="text-xs font-medium text-slate-500 uppercase tracking-wide">Status</label>
+    <select name="status" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white">
+      <option value="">Open (default)</option>
+      {% for s in ['draft','pending_approval','implementing','completed','cancelled'] %}
+      <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s | replace('_',' ') | title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="rounded-lg bg-slate-700 text-white px-4 py-2 text-sm">Apply</button>
+</form>
+
+<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+  <table class="w-full text-left text-sm">
+    <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 font-medium">Change</th>
+        <th class="px-4 py-3 font-medium">Type</th>
+        <th class="px-4 py-3 font-medium">Status</th>
+        <th class="px-4 py-3 font-medium">RITM</th>
+        <th class="px-4 py-3 font-medium">Request</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for row in changes %}
+      <tr class="hover:bg-slate-50/80 cursor-pointer detail-trigger" data-ref="{{ row.public_id }}">
+        <td class="px-4 py-4 font-mono text-primary">{{ row.public_id }}</td>
+        <td class="px-4 py-4">{{ row.change_type | capitalize }}</td>
+        <td class="px-4 py-4">{{ row.status | replace('_',' ') | title }}</td>
+        <td class="px-4 py-4 font-mono text-slate-600">{{ row.ritm_public_id or '—' }}</td>
+        <td class="px-4 py-4 font-mono text-slate-600">{{ row.request_public_id or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No changes yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div id="new-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+    <h3 class="text-lg font-semibold mb-4">New change from template</h3>
+    <form method="post" action="/changes/new" class="space-y-3" id="new-change-form">
+      <div>
+        <label class="text-sm text-slate-700">Change template</label>
+        <select name="change_template_id" required id="change-template-select" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" onchange="renderChangeCustomFields()">
+          <option value="">Select change template</option>
+          {% for t in change_templates %}
+          <option value="{{ t.id }}">{{ t.name }} ({{ t.change_type }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div id="change-custom-fields" class="space-y-3"></div>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Create</button>
+        <button type="button" onclick="document.getElementById('new-modal').classList.add('hidden')" class="rounded-lg border px-4 py-2 text-sm">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
+  <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full my-8 p-6 relative">
+    <button type="button" onclick="document.getElementById('detail-modal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+    <div id="detail-modal-body"></div>
+  </div>
+</div>
+
+<script>
+const changeTemplateFields = {{ template_fields | tojson }};
+function renderChangeCustomFields() {
+  const sel = document.getElementById('change-template-select');
+  const box = document.getElementById('change-custom-fields');
+  if (!sel || !box) return;
+  const fields = changeTemplateFields[sel.value] || [];
+  box.innerHTML = fields.map(f => {
+    const req = f.required ? ' required' : '';
+    const label = f.label + (f.required ? ' *' : '');
+    if (f.field_type === 'textarea') {
+      return '<div><label class="text-sm text-slate-700">' + label + '</label><textarea name="cf_' + f.field_key + '"' + req + ' rows="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea></div>';
+    }
+    if (f.field_type === 'boolean') {
+      return '<label class="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" name="cf_' + f.field_key + '" value="1"' + req + ' /> ' + label + '</label>';
+    }
+    if (f.field_type === 'select' && f.options && f.options.length) {
+      const opts = f.options.map(o => '<option value="' + o + '">' + o + '</option>').join('');
+      return '<div><label class="text-sm text-slate-700">' + label + '</label><select name="cf_' + f.field_key + '"' + req + ' class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"><option value=""></option>' + opts + '</select></div>';
+    }
+    const inputType = f.field_type === 'number' ? 'number' : (f.field_type === 'date' ? 'date' : 'text');
+    return '<div><label class="text-sm text-slate-700">' + label + '</label><input type="' + inputType + '" name="cf_' + f.field_key + '"' + req + ' class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div>';
+  }).join('');
+}
+document.querySelectorAll('.detail-trigger').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const ref = btn.getAttribute('data-ref');
+    const box = document.getElementById('detail-modal-body');
+    box.innerHTML = '<p class="text-slate-500 text-sm">Loading…</p>';
+    document.getElementById('detail-modal').classList.remove('hidden');
+    const r = await fetch('/changes/' + encodeURIComponent(ref));
+    box.innerHTML = await r.text();
+  });
+});
+</script>
+{% endblock %}
