@@ -18,7 +18,7 @@ Single-process FastAPI app with SQLite: **incidents**, **service requests (REQ/R
 | Resolution on close  | Optionally choose a **Knowledge Base article** when closing a ticket (UI, API, MCP). Stored as `resolution_kb_article_id`; webhooks include `resolution_kb_article` in the snapshot.                                                                                                                               |
 | SLA (closed tickets) | Resolution time vs targets by severity: critical 1h, high 4h, medium 1d, low 2d. Duration uses the **created** audit event as open time (actual filing time), not only `incidents.created_at`, which may be midnight UTC for the chosen calendar day from the form.                                                |
 | Knowledge Base       | Articles for documentation and linking from closed incidents. Optional **semantic search** via MCP `rag_search_kb` when `ITSM_EMBEDDING_`* is set (OpenAI-compatible `/v1/embeddings`); new and updated articles are indexed automatically. Run `scripts/reindex_kb_embeddings.py` once to backfill existing rows. |
-| Assets               | Name, description, optional assigned user, asset type, **custom fields** per asset type; all authenticated users may manage assets.                                                                                                                                                                                              |
+| Assets               | Name, description, optional assigned user, asset type, **custom fields** per asset type; optional **Include in external inventory** flag for Ansible and other dynamic inventories; all authenticated users may manage assets.                                                                                                                                                                                              |
 | Asset types          | Admin: classification catalog with **custom field definitions**. Nested under Assets in the UI (collapsible).                                                                                                                                                                                            |
 | Settings             | Admin: **branding** (title, built-in or custom logotype, sidebar colors with Navy/Slate/Forest/Wine/Bronze/Light presets) in `app_settings` and optional uploads under `app/static/uploads/branding/`. API: `GET`/`PATCH` `/api/v1/settings/branding`, `POST` `.../logo` (multipart), `DELETE` `.../logo`          |
 | Webhooks             | Multiple outbound URLs stored in `outbound_webhooks`; **GET** list readable by any authenticated user; **POST** / **PATCH** / **DELETE** admin-only (UI under Webhook config).                                                                                                                                     |
@@ -206,8 +206,8 @@ All routes require **HTTP Basic** authentication unless noted. **Admin** means `
 | PATCH  | `/asset-types/{type_id}`             | Admin                                                  |
 | DELETE | `/asset-types/{type_id}`             | Admin                                                  |
 | GET/POST/PATCH/DELETE | `/asset-types/{type_id}/fields[...]` | Admin (field definitions)              |
-| GET    | `/assets`                            | Authenticated                                          |
-| POST   | `/assets`                            | Authenticated                                          |
+| GET    | `/assets`                            | Authenticated — `?q=` search; `?external_only=true` for Ansible/external inventory |
+| POST   | `/assets`                            | Authenticated — JSON body may include `"external_inventory": true`                 |
 | GET    | `/assets/{item_id}`                  | Authenticated                                          |
 | PATCH  | `/assets/{item_id}`                  | Authenticated                                          |
 | DELETE | `/assets/{item_id}`                  | Authenticated                                          |
@@ -246,6 +246,73 @@ All routes require **HTTP Basic** authentication unless noted. **Admin** means `
 
 
 Full schemas and try-it-out: `**/docs`**.
+
+## Ansible external inventory
+
+Assets marked **Include in external inventory (e.g. Ansible)** in the UI (or created/updated with `"external_inventory": true` via the API) are returned by:
+
+```http
+GET /api/v1/assets?external_only=true
+```
+
+Authentication is **HTTP Basic** (same credentials as the web UI). Optional `q=` narrows results by name or description.
+
+### Examples
+
+Local:
+
+```bash
+curl -sS -u admin:admin \
+  'http://127.0.0.1:8000/api/v1/assets?external_only=true' \
+  | jq .
+```
+
+OpenShift (replace host with your Route):
+
+```bash
+BASE=https://itsm-app-itsm-app.apps.example.com
+curl -sS -u admin:admin \
+  "${BASE}/api/v1/assets?external_only=true" \
+  | jq .
+```
+
+Each item includes `id`, `name`, `description`, `asset_type_name`, `external_inventory` (always `true` when filtered), `assigned_username`, `parent_name`, and `custom_fields` (use asset-type field definitions for things like management IP or environment).
+
+Mark an existing asset for export:
+
+```bash
+curl -sS -u admin:admin -X PATCH \
+  'http://127.0.0.1:8000/api/v1/assets/42' \
+  -H 'Content-Type: application/json' \
+  -d '{"external_inventory": true}'
+```
+
+### Minimal Ansible dynamic inventory (jq)
+
+The API returns a JSON **array**. This shell wrapper emits a host/group structure Ansible can consume (host key = asset `name`; ITSM fields become host vars):
+
+```bash
+#!/usr/bin/env bash
+# itsm_inventory.sh — source ITSM_API_USER / ITSM_API_PASSWORD / ITSM_API_BASE
+curl -sS -u "${ITSM_API_USER}:${ITSM_API_PASSWORD}" \
+  "${ITSM_API_BASE}/api/v1/assets?external_only=true" \
+| jq '{
+    _meta: { hostvars: (reduce .[] as $a ({}; .[$a.name] = ($a | del(.name)))) },
+    itsm: { hosts: [.[].name] }
+  }'
+```
+
+Run a playbook against it:
+
+```bash
+export ITSM_API_BASE=http://127.0.0.1:8000
+export ITSM_API_USER=admin ITSM_API_PASSWORD=admin
+ansible-playbook -i ./itsm_inventory.sh site.yml
+```
+
+Use asset-type **custom fields** (for example `management_ip` or `environment`) for `ansible_host`, groups, or tags—map them in the jq script or in `group_by` logic as needed.
+
+MCP alternative: tool `list_assets` with `external_only=true` (same underlying data).
 
 ## Webhook payload
 
