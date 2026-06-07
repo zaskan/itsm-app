@@ -174,10 +174,22 @@ _SCHEMA_SQL = """
                 description TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'draft'
                     CHECK (status IN ('draft','submitted','in_progress','fulfilled','closed','cancelled')),
+                resolution_kb_article_id INTEGER REFERENCES kb_articles(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                submitted_at TEXT
+                submitted_at TEXT,
+                closed_at TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS request_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id INTEGER NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+                author_user_id INTEGER NOT NULL REFERENCES users(id),
+                body TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_request_comments_request ON request_comments(request_id);
 
             CREATE TABLE IF NOT EXISTS requested_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -376,6 +388,7 @@ def _migrate_legacy_schema() -> None:
 
         _migrate_service_catalog_to_templates(cur, json)
         _migrate_service_requests_modern(cur)
+        _migrate_service_request_resolution(cur)
         _migrate_assigned_user_fields(cur)
         _migrate_change_tasks_standalone(cur)
 
@@ -555,6 +568,39 @@ def _migrate_service_requests_modern(cur: sqlite3.Cursor) -> None:
             SET description = business_justification
             WHERE (description IS NULL OR description = '') AND business_justification != ''
             """
+        )
+
+
+def _migrate_service_request_resolution(cur: sqlite3.Cursor) -> None:
+    req_cols = _table_columns(cur, "service_requests")
+    if not req_cols:
+        return
+    if "resolution_kb_article_id" not in req_cols:
+        cur.execute(
+            """
+            ALTER TABLE service_requests ADD COLUMN resolution_kb_article_id INTEGER
+            REFERENCES kb_articles(id) ON DELETE SET NULL
+            """
+        )
+    if "closed_at" not in req_cols:
+        cur.execute("ALTER TABLE service_requests ADD COLUMN closed_at TEXT")
+    cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='request_comments'"
+    )
+    if not cur.fetchone():
+        cur.execute(
+            """
+            CREATE TABLE request_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id INTEGER NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+                author_user_id INTEGER NOT NULL REFERENCES users(id),
+                body TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_request_comments_request ON request_comments(request_id)"
         )
 
 

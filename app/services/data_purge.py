@@ -15,6 +15,7 @@ _PURGE_TABLES: tuple[str, ...] = (
     "change_requests",
     "requested_items",
     "service_requests",
+    "request_comments",
     "comments",
     "incident_events",
     "incidents",

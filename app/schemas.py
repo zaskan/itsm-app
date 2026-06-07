@@ -359,6 +359,25 @@ class RequestPatch(BaseModel):
     description: str | None = None
 
 
+class RequestCommentBody(BaseModel):
+    body: str = Field(..., min_length=1, max_length=10000)
+
+
+class RequestCloseBody(BaseModel):
+    kb_article_id: int | None = None
+
+
+class RequestKbBody(BaseModel):
+    kb_article_id: int | None = None
+
+
+class RequestCommentOut(BaseModel):
+    id: int
+    body: str
+    author_username: str
+    created_at: str
+
+
 class RequestOut(BaseModel):
     id: int
     public_id: str
@@ -370,6 +389,8 @@ class RequestOut(BaseModel):
     created_at: str
     updated_at: str
     submitted_at: str | None = None
+    closed_at: str | None = None
+    resolution_kb_article_id: int | None = None
 
 
 class RitmCreate(BaseModel):

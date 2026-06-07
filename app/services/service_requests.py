@@ -244,6 +244,162 @@ def add_ritm_to_request(
         return _ritm_out(cur, dict(cur.fetchone()))
 
 
+def is_simple_request(detail: dict[str, Any]) -> bool:
+    """True when no RITM is tied to a request template (ad-hoc / non-catalog workflow)."""
+    ritms = detail.get("ritms") or []
+    return all(not r.get("request_template_id") for r in ritms)
+
+
+def _validate_kb_article_id(cur, kb_id: int | None) -> None:
+    if kb_id is None:
+        return
+    cur.execute("SELECT id FROM kb_articles WHERE id = ?", (kb_id,))
+    if not cur.fetchone():
+        raise ValueError(f"KB article {kb_id} not found")
+
+
+def _require_simple_open(detail: dict[str, Any]) -> None:
+    if not is_simple_request(detail):
+        raise ValueError("Only non-template requests support this action")
+    if detail["status"] != "draft":
+        raise ValueError("Request is not open for updates")
+
+
+def _list_request_comments(cur, request_id: int) -> list[dict[str, Any]]:
+    cur.execute(
+        """
+        SELECT c.*, u.username AS author_username
+        FROM request_comments c
+        JOIN users u ON u.id = c.author_user_id
+        WHERE c.request_id = ?
+        ORDER BY c.created_at ASC
+        """,
+        (request_id,),
+    )
+    return [dict(r) for r in cur.fetchall()]
+
+
+def add_request_comment(
+    request_ref: str | int,
+    body: str,
+    actor_user_id: int,
+) -> dict[str, Any]:
+    body = body.strip()
+    if not body:
+        raise ValueError("Comment body is required")
+    detail = get_request_detail(request_ref)
+    if not detail:
+        raise ValueError("Request not found")
+    _require_simple_open(detail)
+    now = _utc_now_iso()
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO request_comments (request_id, author_user_id, body, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (detail["id"], actor_user_id, body, now),
+        )
+        cur.execute(
+            "UPDATE service_requests SET updated_at = ? WHERE id = ?",
+            (now, detail["id"]),
+        )
+        we_svc.log_workflow_event(
+            cur,
+            record_type="request",
+            record_id=detail["id"],
+            event_type="comment_added",
+            actor_user_id=actor_user_id,
+            payload={"comment_preview": body[:200]},
+        )
+    result = get_request_detail(request_ref)
+    assert result is not None
+    return result
+
+
+def set_request_resolution_kb(
+    request_ref: str | int,
+    kb_article_id: int | None,
+    actor_user_id: int,
+) -> dict[str, Any]:
+    detail = get_request_detail(request_ref)
+    if not detail:
+        raise ValueError("Request not found")
+    _require_simple_open(detail)
+    now = _utc_now_iso()
+    with db.cursor() as cur:
+        _validate_kb_article_id(cur, kb_article_id)
+        cur.execute(
+            """
+            UPDATE service_requests
+            SET resolution_kb_article_id = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (kb_article_id, now, detail["id"]),
+        )
+        we_svc.log_workflow_event(
+            cur,
+            record_type="request",
+            record_id=detail["id"],
+            event_type="kb_assigned",
+            actor_user_id=actor_user_id,
+            payload={"resolution_kb_article_id": kb_article_id},
+        )
+    result = get_request_detail(request_ref)
+    assert result is not None
+    return result
+
+
+def close_request(
+    request_ref: str | int,
+    actor_user_id: int,
+    *,
+    resolution_kb_article_id: int | None = None,
+) -> dict[str, Any]:
+    detail = get_request_detail(request_ref)
+    if not detail:
+        raise ValueError("Request not found")
+    if not is_simple_request(detail):
+        raise ValueError("Only non-template requests can be closed this way")
+    if detail["status"] in ("closed", "cancelled"):
+        raise ValueError("Request already closed or cancelled")
+    if detail["status"] != "draft":
+        raise ValueError("Use the normal workflow to complete template-based requests")
+    now = _utc_now_iso()
+    kb_id = resolution_kb_article_id
+    if kb_id is None:
+        kb_id = detail.get("resolution_kb_article_id")
+    with db.cursor() as cur:
+        _validate_kb_article_id(cur, kb_id)
+        cur.execute(
+            """
+            UPDATE service_requests
+            SET status = 'closed', closed_at = ?, updated_at = ?,
+                resolution_kb_article_id = ?
+            WHERE id = ?
+            """,
+            (now, now, kb_id, detail["id"]),
+        )
+        cur.execute(
+            "UPDATE requested_items SET status = 'closed', updated_at = ? WHERE request_id = ?",
+            (now, detail["id"]),
+        )
+        payload: dict[str, Any] = {}
+        if kb_id is not None:
+            payload["resolution_kb_article_id"] = kb_id
+        we_svc.log_workflow_event(
+            cur,
+            record_type="request",
+            record_id=detail["id"],
+            event_type="closed",
+            actor_user_id=actor_user_id,
+            payload=payload,
+        )
+    result = get_request_detail(request_ref)
+    assert result is not None
+    return result
+
+
 def get_request_detail(request_ref: str | int) -> dict[str, Any] | None:
     with db.cursor() as cur:
         req = _get_request_row(cur, request_ref)
@@ -260,11 +416,22 @@ def get_request_detail(request_ref: str | int) -> dict[str, Any] | None:
         )
         ritms = [_ritm_out(cur, dict(r)) for r in cur.fetchall()]
         events = we_svc.list_events_for_record("request", req["id"])
+        comments = _list_request_comments(cur, req["id"])
+        kb_article = None
+        kb_id = req.get("resolution_kb_article_id")
+        if kb_id:
+            cur.execute("SELECT id, title FROM kb_articles WHERE id = ?", (kb_id,))
+            kb_row = cur.fetchone()
+            if kb_row:
+                kb_article = {"id": kb_row[0], "title": kb_row[1]}
         return {
             **dict(req),
             "requester_username": urow[0] if urow else "",
             "ritms": ritms,
             "events": events,
+            "comments": comments,
+            "resolution_kb_article": kb_article,
+            "is_simple_request": is_simple_request({"ritms": ritms}),
         }
 
 

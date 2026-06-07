@@ -803,6 +803,14 @@ def requests_page(
         q=q,
     )
     templates_list = rtpl_svc.list_request_templates()
+    template_fields = {
+        str(t["id"]): cf_svc.list_definitions("request_template", t["id"])
+        for t in templates_list
+    }
+    template_meta = {
+        str(t["id"]): {"name": t["name"], "description": t["description"]}
+        for t in templates_list
+    }
     return templates.TemplateResponse(
         request,
         "requests.html",
@@ -814,13 +822,16 @@ def requests_page(
             status_filter=status or "",
             open_only=is_open,
             request_templates=templates_list,
+            template_fields=template_fields,
+            template_meta=template_meta,
         ),
     )
 
 
 @router.post("/requests/new")
-def requests_new(
+async def requests_new(
     request: Request,
+    background_tasks: BackgroundTasks,
     name: str = Form(...),
     description: str = Form(...),
     request_template_id: str = Form(""),
@@ -829,15 +840,37 @@ def requests_new(
     if not me:
         raise login_redirect()
     tpl_id = int(request_template_id) if request_template_id.isdigit() else None
+    form = await request.form()
+    custom = {k[3:]: v for k, v in form.items() if k.startswith("cf_")}
     try:
-        req_svc.create_request(
+        snap = req_svc.create_request(
             requester_user_id=me["id"],
             name=name.strip(),
             description=description.strip(),
             request_template_id=tpl_id,
+            specifications=custom if tpl_id else None,
         )
-    except ValueError:
-        return RedirectResponse("/requests?error=1", status_code=303)
+        if tpl_id:
+            snap = wf_svc.submit_request(snap["public_id"], me["id"])
+            wh_svc.schedule_workflow_webhook(
+                background_tasks, "request", "submitted", me["username"], snap
+            )
+            for chg in snap.get("changes_created", []):
+                wh_svc.schedule_workflow_webhook(
+                    background_tasks, "change", "created", me["username"], chg
+                )
+                if chg.get("status") == "implementing":
+                    wh_svc.schedule_workflow_webhook(
+                        background_tasks, "change", "approved", me["username"], chg
+                    )
+                elif chg.get("status") == "pending_approval":
+                    wh_svc.schedule_workflow_webhook(
+                        background_tasks, "change", "pending_approval", me["username"], chg
+                    )
+    except ValueError as e:
+        from urllib.parse import quote
+
+        return RedirectResponse(f"/requests?error={quote(str(e))}", status_code=303)
     return RedirectResponse("/requests", status_code=303)
 
 
@@ -850,15 +883,27 @@ def request_detail_fragment(request: Request, request_ref: str) -> HTMLResponse:
     if not detail:
         raise HTTPException(404, "Not found")
     catalog = rtpl_svc.list_request_templates()
+    template_fields = {
+        str(t["id"]): cf_svc.list_definitions("request_template", t["id"])
+        for t in catalog
+    }
+    kb_articles = kb_svc.list_articles()
     return templates.TemplateResponse(
         request,
         "request_detail_fragment.html",
-        _page(request, user, service_request=detail, request_templates=catalog),
+        _page(
+            request,
+            user,
+            service_request=detail,
+            request_templates=catalog,
+            template_fields=template_fields,
+            kb_articles=kb_articles,
+        ),
     )
 
 
 @router.post("/requests/{request_ref}/ritm")
-def request_add_ritm(
+async def request_add_ritm(
     request: Request,
     request_ref: str,
     catalog_item_id: str = Form(""),
@@ -868,11 +913,14 @@ def request_add_ritm(
     if not me:
         raise login_redirect()
     cid: int | None = int(catalog_item_id) if catalog_item_id.isdigit() else None
+    form = await request.form()
+    custom = {k[3:]: v for k, v in form.items() if k.startswith("cf_")}
     try:
         req_svc.add_ritm_to_request(
             request_ref,
             request_template_id=cid,
             item_type=item_type.strip(),
+            specifications=custom if cid else None,
             actor_user_id=me["id"],
         )
     except ValueError as e:
@@ -914,6 +962,72 @@ def request_cancel(
         raise HTTPException(400, str(e)) from e
     wh_svc.schedule_workflow_webhook(
         background_tasks, "request", "cancelled", me["username"], snap
+    )
+    return RedirectResponse("/requests", status_code=303)
+
+
+@router.post("/requests/{request_ref}/comment")
+def request_comment_ui(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    request_ref: str,
+    body: str = Form(...),
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    try:
+        snap = req_svc.add_request_comment(request_ref, body.strip(), me["id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "request", "comment_added", me["username"], snap
+    )
+    return RedirectResponse("/requests", status_code=303)
+
+
+@router.post("/requests/{request_ref}/resolution-kb")
+def request_resolution_kb_ui(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    request_ref: str,
+    kb_article_id: str = Form(""),
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    raw = kb_article_id.strip()
+    kid = int(raw) if raw.isdigit() else None
+    try:
+        snap = req_svc.set_request_resolution_kb(request_ref, kid, me["id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "request", "kb_assigned", me["username"], snap
+    )
+    return RedirectResponse("/requests", status_code=303)
+
+
+@router.post("/requests/{request_ref}/close")
+def request_close_ui(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    request_ref: str,
+    kb_article_id: str = Form(""),
+) -> RedirectResponse:
+    me = get_session_user(request)
+    if not me:
+        raise login_redirect()
+    raw = kb_article_id.strip()
+    kid = int(raw) if raw.isdigit() else None
+    try:
+        snap = req_svc.close_request(
+            request_ref, me["id"], resolution_kb_article_id=kid
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "request", "closed", me["username"], snap
     )
     return RedirectResponse("/requests", status_code=303)
 

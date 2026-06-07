@@ -1283,6 +1283,60 @@ def api_request_cancel(
     return snap
 
 
+@router.post("/requests/{request_ref}/comments")
+def api_request_comment(
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(get_current_user_basic)],
+    request_ref: str,
+    body: schemas.RequestCommentBody,
+) -> dict:
+    try:
+        snap = req_svc.add_request_comment(request_ref, body.body, user["id"])
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "request", "comment_added", user["username"], snap
+    )
+    return snap
+
+
+@router.post("/requests/{request_ref}/resolution-kb")
+def api_request_resolution_kb(
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(get_current_user_basic)],
+    request_ref: str,
+    body: schemas.RequestKbBody,
+) -> dict:
+    try:
+        snap = req_svc.set_request_resolution_kb(request_ref, body.kb_article_id, user["id"])
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "request", "kb_assigned", user["username"], snap
+    )
+    return snap
+
+
+@router.post("/requests/{request_ref}/close")
+def api_request_close(
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(get_current_user_basic)],
+    request_ref: str,
+    body: schemas.RequestCloseBody | None = None,
+) -> dict:
+    kid = body.kb_article_id if body else None
+    try:
+        snap = req_svc.close_request(
+            request_ref, user["id"], resolution_kb_article_id=kid
+        )
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    wh_svc.schedule_workflow_webhook(
+        background_tasks, "request", "closed", user["username"], snap
+    )
+    return snap
+
+
 @router.get("/requests/{request_ref}/ritms", response_model=list[schemas.RitmOut])
 def api_request_ritms_list(
     user: Annotated[dict, Depends(get_current_user_basic)],
