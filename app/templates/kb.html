@@ -9,6 +9,29 @@
 {% endblock %}
 
 {% block content %}
+<style>
+  .kb-markdown { font-size: 0.875rem; line-height: 1.625; color: #475569; }
+  .kb-markdown > * + * { margin-top: 0.75rem; }
+  .kb-markdown h1 { font-size: 1.25rem; font-weight: 600; color: #0f172a; }
+  .kb-markdown h2 { font-size: 1.125rem; font-weight: 600; color: #0f172a; }
+  .kb-markdown h3, .kb-markdown h4 { font-size: 1rem; font-weight: 600; color: #1e293b; }
+  .kb-markdown ul, .kb-markdown ol { padding-left: 1.5rem; }
+  .kb-markdown ul { list-style-type: disc; }
+  .kb-markdown ol { list-style-type: decimal; }
+  .kb-markdown li + li { margin-top: 0.25rem; }
+  .kb-markdown a { color: #2563eb; text-decoration: underline; }
+  .kb-markdown a:hover { color: #1d4ed8; }
+  .kb-markdown blockquote { border-left: 3px solid #cbd5e1; padding-left: 1rem; color: #64748b; }
+  .kb-markdown pre { background: #f1f5f9; border-radius: 0.5rem; padding: 0.75rem 1rem; overflow-x: auto; }
+  .kb-markdown code { font-family: ui-monospace, monospace; font-size: 0.8125rem; }
+  .kb-markdown :not(pre) > code { background: #f1f5f9; padding: 0.125rem 0.375rem; border-radius: 0.25rem; }
+  .kb-markdown table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+  .kb-markdown th, .kb-markdown td { border: 1px solid #e2e8f0; padding: 0.375rem 0.625rem; text-align: left; }
+  .kb-markdown th { background: #f8fafc; font-weight: 600; }
+  .kb-title[data-kb-toggle] { cursor: pointer; }
+  .kb-title[data-kb-toggle]:hover { color: #2563eb; }
+</style>
+
 <p class="text-slate-600 text-sm mb-4">Articles are stored for documentation and can be consumed by agents (REST and MCP) for RAG-style workflows.</p>
 
 <form method="get" class="mb-6 flex gap-2 max-w-md">
@@ -18,18 +41,34 @@
 
 <div class="space-y-3">
   {% for a in articles %}
-  <div class="bg-white rounded-lg border border-slate-200 p-4 flex justify-between gap-4">
-    <div>
-      <h3 class="font-medium text-slate-900">{{ a.title }}</h3>
-      <p class="text-sm text-slate-600 mt-1 whitespace-pre-wrap">{{ a.description }}</p>
-      <p class="text-xs text-slate-400 mt-2">Updated {{ a.updated_at }}</p>
-    </div>
-    <div class="shrink-0 flex flex-col gap-2">
-      <button type="button" onclick="editKb({{ a.id }}, {{ a.title|tojson }}, {{ a.description|tojson }})"
-        class="text-sm text-primary hover:underline">Edit</button>
-      <form method="post" action="/kb/{{ a.id }}/delete" onsubmit="return confirm('Delete this article?');">
-        <button type="submit" class="text-sm text-red-600 hover:underline">Delete</button>
+  <div class="kb-article bg-white rounded-lg border border-slate-200 p-4" data-kb-id="{{ a.id }}">
+    <h3 class="kb-title font-medium text-slate-900 min-w-0" data-kb-toggle>{{ a.title }}</h3>
+    <div class="kb-panel hidden mt-4 pt-4 border-t border-slate-100" data-kb-panel>
+      <div class="kb-markdown" data-kb-view-mode>{{ a.description | markdown | safe }}</div>
+      <p class="text-xs text-slate-400 mt-3" data-kb-view-mode>Updated {{ a.updated_at }}</p>
+      <form class="hidden space-y-4" data-kb-edit-mode method="post" action="/kb/{{ a.id }}/edit">
+        {% if q %}<input type="hidden" name="q" value="{{ q }}" />{% endif %}
+        <div>
+          <label class="text-sm font-medium">Title</label>
+          <input name="title" required value="{{ a.title }}"
+            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="text-sm font-medium">Description <span class="text-slate-400 font-normal">(Markdown supported)</span></label>
+          <textarea name="description" rows="8"
+            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono">{{ a.description }}</textarea>
+        </div>
+        <div class="flex gap-2">
+          <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Save</button>
+          <button type="button" data-kb-cancel class="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
+        </div>
       </form>
+      <div class="flex gap-4 mt-3" data-kb-actions>
+        <button type="button" data-kb-edit class="text-sm text-primary hover:underline">Edit</button>
+        <form method="post" action="/kb/{{ a.id }}/delete" onsubmit="return confirm('Delete this article?');">
+          <button type="submit" class="text-sm text-red-600 hover:underline">Delete</button>
+        </form>
+      </div>
     </div>
   </div>
   {% else %}
@@ -47,26 +86,8 @@
         <input name="title" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </div>
       <div>
-        <label class="text-sm font-medium">Description</label>
-        <textarea name="description" rows="5" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
-      </div>
-      <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Save</button>
-    </form>
-  </div>
-</div>
-
-<div id="kb-edit" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-  <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 relative">
-    <button type="button" class="absolute top-4 right-4 text-slate-400" onclick="document.getElementById('kb-edit').classList.add('hidden')">&times;</button>
-    <h2 class="text-lg font-semibold mb-4">Edit article</h2>
-    <form id="kb-edit-form" method="post" class="space-y-4">
-      <div>
-        <label class="text-sm font-medium">Title</label>
-        <input name="title" id="kb-edit-title" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-      </div>
-      <div>
-        <label class="text-sm font-medium">Description</label>
-        <textarea name="description" id="kb-edit-desc" rows="5" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+        <label class="text-sm font-medium">Description <span class="text-slate-400 font-normal">(Markdown supported)</span></label>
+        <textarea name="description" rows="8" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"></textarea>
       </div>
       <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Save</button>
     </form>
@@ -74,11 +95,91 @@
 </div>
 
 <script>
-  function editKb(id, title, desc) {
-    document.getElementById('kb-edit-form').action = '/kb/' + id + '/edit';
-    document.getElementById('kb-edit-title').value = title;
-    document.getElementById('kb-edit-desc').value = desc;
-    document.getElementById('kb-edit').classList.remove('hidden');
+(function () {
+  function showViewMode(article) {
+    article.querySelectorAll('[data-kb-view-mode]').forEach(function (el) {
+      el.classList.remove('hidden');
+    });
+    var editForm = article.querySelector('[data-kb-edit-mode]');
+    if (editForm) editForm.classList.add('hidden');
+    var actions = article.querySelector('[data-kb-actions]');
+    if (actions) actions.classList.remove('hidden');
   }
+
+  function showEditMode(article) {
+    article.querySelectorAll('[data-kb-view-mode]').forEach(function (el) {
+      el.classList.add('hidden');
+    });
+    var editForm = article.querySelector('[data-kb-edit-mode]');
+    if (editForm) editForm.classList.remove('hidden');
+    var actions = article.querySelector('[data-kb-actions]');
+    if (actions) actions.classList.add('hidden');
+  }
+
+  function expandArticle(article) {
+    var panel = article.querySelector('[data-kb-panel]');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    showViewMode(article);
+  }
+
+  function collapseArticle(article) {
+    var panel = article.querySelector('[data-kb-panel]');
+    if (!panel) return;
+    panel.classList.add('hidden');
+    showViewMode(article);
+  }
+
+  function isExpanded(article) {
+    var panel = article.querySelector('[data-kb-panel]');
+    return panel && !panel.classList.contains('hidden');
+  }
+
+  function collapseAllArticles() {
+    document.querySelectorAll('.kb-article').forEach(collapseArticle);
+  }
+
+  function toggleArticle(article) {
+    if (isExpanded(article)) {
+      collapseArticle(article);
+    } else {
+      collapseAllArticles();
+      expandArticle(article);
+    }
+  }
+
+  document.querySelectorAll('.kb-article').forEach(function (article) {
+    var toggleTitle = article.querySelector('[data-kb-toggle]');
+    var editBtn = article.querySelector('[data-kb-edit]');
+    var cancelBtn = article.querySelector('[data-kb-cancel]');
+
+    if (toggleTitle) {
+      toggleTitle.addEventListener('click', function () {
+        toggleArticle(article);
+      });
+    }
+
+    if (editBtn) {
+      editBtn.addEventListener('click', function () {
+        showEditMode(article);
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        showViewMode(article);
+      });
+    }
+  });
+
+  var openId = {{ open_article_id | default(none) | tojson }};
+  if (openId) {
+    var target = document.querySelector('.kb-article[data-kb-id="' + openId + '"]');
+    if (target) {
+      collapseAllArticles();
+      expandArticle(target);
+    }
+  }
+})();
 </script>
 {% endblock %}

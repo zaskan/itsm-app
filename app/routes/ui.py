@@ -34,9 +34,11 @@ from app.services import tasks as task_svc
 from app.services import users_admin as usr_svc
 from app.services import webhooks as wh_svc
 from app.services import workflow as wf_svc
+from app.markdown_render import render_markdown
 
 DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 templates = Jinja2Templates(directory=os.path.normpath(DIR))
+templates.env.filters["markdown"] = render_markdown
 router = APIRouter(tags=["ui"])
 
 
@@ -444,7 +446,11 @@ def incident_delete(
 
 
 @router.get("/kb", response_class=HTMLResponse)
-def kb_page(request: Request, q: str | None = None) -> HTMLResponse:
+def kb_page(
+    request: Request,
+    q: str | None = None,
+    open: int | None = Query(None, alias="open"),
+) -> HTMLResponse:
     user = get_session_user(request)
     if not user:
         raise login_redirect()
@@ -452,7 +458,7 @@ def kb_page(request: Request, q: str | None = None) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "kb.html",
-        _page(request, user, articles=articles, q=q or ""),
+        _page(request, user, articles=articles, q=q or "", open_article_id=open),
     )
 
 
@@ -475,12 +481,18 @@ def kb_edit(
     article_id: int,
     title: str = Form(...),
     description: str = Form(""),
+    q: str = Form(""),
 ) -> RedirectResponse:
     me = get_session_user(request)
     if not me:
         raise login_redirect()
     kb_svc.update_article(article_id, title.strip(), description.strip())
-    return RedirectResponse("/kb", status_code=303)
+    params = f"open={article_id}"
+    if q.strip():
+        from urllib.parse import quote
+
+        params = f"q={quote(q.strip())}&{params}"
+    return RedirectResponse(f"/kb?{params}", status_code=303)
 
 
 @router.post("/kb/{article_id}/delete")
