@@ -103,6 +103,8 @@ def test_fetch_embedding_openai_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     }
 
     class FakeResp:
+        is_error = False
+
         def raise_for_status(self) -> None:
             pass
 
@@ -123,6 +125,7 @@ def test_fetch_embedding_openai_shape(monkeypatch: pytest.MonkeyPatch) -> None:
             assert url == "http://api.example/v1/embeddings"
             assert json["model"] == "m"
             assert json["input"] == "hello"
+            assert json["encoding_format"] == "float"
             return FakeResp()
 
     with patch("app.services.kb_embeddings.httpx.Client", FakeClient):
@@ -135,3 +138,72 @@ def test_reindex_all_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ITSM_EMBEDDING_MODEL", raising=False)
     summary = kb_emb.reindex_all_articles()
     assert summary.get("error") == "rag_not_configured"
+
+
+def test_truncate_embedding_input_short_text() -> None:
+    assert kb_emb.truncate_embedding_input("hello", max_chars=100) == "hello"
+
+
+def test_truncate_embedding_input_long_text() -> None:
+    text = "a" * 200
+    out = kb_emb.truncate_embedding_input(text, max_chars=50)
+    assert len(out) == 50
+    assert out.endswith("…")
+
+
+def test_article_index_text_truncates_description(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ITSM_EMBEDDING_MAX_INPUT_CHARS", "40")
+    out = kb_emb.article_index_text("Short title", "x" * 100)
+    assert out.startswith("Title: Short title\n\n")
+    assert len(out) <= 40
+    assert out.endswith("…")
+
+
+def test_fetch_embedding_retries_on_context_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ITSM_EMBEDDING_BASE_URL", "http://api.example")
+    monkeypatch.setenv("ITSM_EMBEDDING_MODEL", "m")
+    monkeypatch.setenv("ITSM_EMBEDDING_MAX_INPUT_CHARS", "200")
+
+    calls: list[int] = []
+
+    class FakeResp:
+        def __init__(self, status: int, body: str) -> None:
+            self.status_code = status
+            self.text = body
+            self.is_error = status >= 400
+            self.request = type("R", (), {"url": "http://api.example/v1/embeddings"})()
+
+        def raise_for_status(self) -> None:
+            if self.is_error:
+                raise httpx.HTTPStatusError("err", request=None, response=self)
+
+        def json(self) -> dict:
+            return {
+                "data": [{"embedding": [0.1, 0.2]}],
+            }
+
+    class FakeClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def post(self, url: str, headers: dict, json: dict) -> FakeResp:
+            calls.append(len(json["input"]))
+            if len(calls) == 1:
+                return FakeResp(400, "ContextWindowExceededError maximum context length is 512")
+            return FakeResp(200, "ok")
+
+    import httpx
+
+    with patch("app.services.kb_embeddings.httpx.Client", FakeClient):
+        vec = kb_emb.fetch_embedding("a" * 300)
+
+    assert len(calls) == 2
+    assert calls[0] == 200
+    assert calls[1] < calls[0]
+    assert vec == [0.1, 0.2]

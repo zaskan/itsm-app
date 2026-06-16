@@ -14,6 +14,12 @@ from app import db
 
 logger = logging.getLogger(__name__)
 
+_TRUNCATION_SUFFIX = "…"
+# ~2.3 chars/token is typical for technical English; 1200 chars ≈ 480 tokens (under 512).
+_DEFAULT_MAX_INPUT_CHARS = 1200
+_CONTEXT_RETRY_SHRINK = 0.75
+_MAX_CONTEXT_RETRIES = 4
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -40,22 +46,94 @@ def _embeddings_url() -> str:
     return f"{_base_url()}/v1/embeddings"
 
 
+def _max_input_chars() -> int:
+    raw = os.environ.get("ITSM_EMBEDDING_MAX_INPUT_CHARS", str(_DEFAULT_MAX_INPUT_CHARS)).strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return _DEFAULT_MAX_INPUT_CHARS
+
+
+def truncate_embedding_input(text: str, *, max_chars: int | None = None) -> str:
+    """Trim text to stay within the embedding model context window (char-based estimate)."""
+    limit = max_chars if max_chars is not None else _max_input_chars()
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    if limit <= len(_TRUNCATION_SUFFIX):
+        return text[:limit]
+    return text[: limit - len(_TRUNCATION_SUFFIX)] + _TRUNCATION_SUFFIX
+
+
+def _is_context_window_error(response: httpx.Response) -> bool:
+    if response.status_code != 400:
+        return False
+    body = response.text.lower()
+    return (
+        "contextwindowexceeded" in body
+        or "maximum context length" in body
+        or "context length" in body
+    )
+
+
 def fetch_embedding(text: str) -> list[float]:
     headers = {"Content-Type": "application/json"}
     key = _api_key()
     if key:
         headers["Authorization"] = f"Bearer {key}"
-    payload = {"model": _model(), "input": text}
+    original = text.strip()
+    char_limit = min(len(original), _max_input_chars())
+    input_text = truncate_embedding_input(original, max_chars=char_limit)
+    if len(input_text) < len(original):
+        logger.info(
+            "Truncated embedding input from %s to %s chars (limit %s)",
+            len(original),
+            len(input_text),
+            _max_input_chars(),
+        )
+
     with httpx.Client(timeout=60.0) as client:
-        r = client.post(_embeddings_url(), headers=headers, json=payload)
-        r.raise_for_status()
-        data = r.json()
+        for attempt in range(_MAX_CONTEXT_RETRIES):
+            payload = {
+                "model": _model(),
+                "input": input_text,
+                "encoding_format": "float",
+            }
+            r = client.post(_embeddings_url(), headers=headers, json=payload)
+            if r.is_error:
+                if _is_context_window_error(r) and attempt < _MAX_CONTEXT_RETRIES - 1:
+                    char_limit = max(50, int(char_limit * _CONTEXT_RETRY_SHRINK))
+                    input_text = truncate_embedding_input(original, max_chars=char_limit)
+                    logger.info(
+                        "Embedding context window exceeded; retrying with %s chars (attempt %s)",
+                        len(input_text),
+                        attempt + 2,
+                    )
+                    continue
+                logger.warning(
+                    "Embeddings API error %s %s: %s",
+                    r.status_code,
+                    r.request.url,
+                    r.text[:500],
+                )
+            r.raise_for_status()
+            data = r.json()
+            break
     emb = data["data"][0]["embedding"]
     return [float(x) for x in emb]
 
 
 def article_index_text(title: str, description: str) -> str:
-    return f"Title: {title}\n\n{description}"
+    """Build index text; keep full title and truncate description to fit model limits."""
+    prefix = f"Title: {title}\n\n"
+    limit = _max_input_chars()
+    if len(prefix) >= limit:
+        return truncate_embedding_input(prefix, max_chars=limit)
+    room = limit - len(prefix)
+    desc = description.strip()
+    if len(desc) <= room:
+        return prefix + desc
+    return prefix + truncate_embedding_input(desc, max_chars=room)
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:

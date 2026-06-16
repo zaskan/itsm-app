@@ -54,11 +54,12 @@ Single-process FastAPI app with SQLite: **incidents**, **service requests (REQ/R
 | `ITSM_EMBEDDING_BASE_URL`                                     | Origin of an OpenAI-compatible API (e.g. `https://llamastack.example.com`, no path); the app POSTs to `{BASE}/v1/embeddings`. Used for MCP `rag_search_kb` and automatic KB indexing on create/update.   |
 | `ITSM_EMBEDDING_MODEL`                                        | Embedding model id required when using RAG (with `ITSM_EMBEDDING_BASE_URL`).                                                                                                                             |
 | `ITSM_EMBEDDING_API_KEY`                                      | Optional `Bearer` token for the embeddings API.                                                                                                                                                          |
+| `ITSM_EMBEDDING_MAX_INPUT_CHARS`                              | Max characters sent per embedding request (default `1200`, ~480 tokens for 512-token models). Lower for dense/technical text. Auto-retries with shorter input on context-window errors.                  |
 
 
 ### KB semantic search (RAG)
 
-Set `ITSM_EMBEDDING_BASE_URL` and `ITSM_EMBEDDING_MODEL` (and `ITSM_EMBEDDING_API_KEY` if your gateway requires it). Embeddings are stored in SQLite (`kb_article_embeddings`) and updated when articles are created or edited; deleting an article removes its row via foreign-key cascade.
+Set `ITSM_EMBEDDING_BASE_URL` and `ITSM_EMBEDDING_MODEL` (and `ITSM_EMBEDDING_API_KEY` if your gateway requires it). The app sends `encoding_format=float` for compatibility with LiteLLM and vLLM embedding backends. Embeddings are stored in SQLite (`kb_article_embeddings`) and updated when articles are created or edited; deleting an article removes its row via foreign-key cascade.
 
 After enabling embeddings, **backfill** articles that already existed:
 
