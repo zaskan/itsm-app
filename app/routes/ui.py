@@ -701,6 +701,7 @@ def assets_page(
     request: Request,
     q: str | None = None,
     external_only: str | None = None,
+    open: int | None = Query(None, alias="open"),
 ) -> HTMLResponse:
     user = get_session_user(request)
     if not user:
@@ -724,6 +725,7 @@ def assets_page(
             users=users,
             q=q or "",
             external_only=ext,
+            open_item_id=open,
         ),
     )
 
@@ -783,7 +785,15 @@ async def assets_edit(request: Request, item_id: int) -> RedirectResponse:
         )
     except ValueError:
         return RedirectResponse("/assets?error=1", status_code=303)
-    return RedirectResponse("/assets", status_code=303)
+    params = f"open={item_id}"
+    q_val = str(form.get("q", "")).strip()
+    if q_val:
+        from urllib.parse import quote
+
+        params = f"q={quote(q_val)}&{params}"
+    if form.get("external_only") == "1":
+        params = f"external_only=1&{params}"
+    return RedirectResponse(f"/assets?{params}", status_code=303)
 
 
 @router.post("/assets/{item_id}/delete")

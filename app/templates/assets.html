@@ -85,6 +85,36 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  .inv-item-expanded {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.12);
+  }
+  .inv-form {
+    max-width: 42rem;
+  }
+  .inv-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #2563eb;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .inv-toggle:hover {
+    background: rgba(37, 99, 235, 0.08);
+    text-decoration: none;
+  }
+  .inv-toggle-chevron {
+    display: inline-block;
+    transition: transform 0.15s ease;
+    font-size: 0.625rem;
+  }
+  .inv-item-expanded .inv-toggle-chevron {
+    transform: rotate(90deg);
+  }
 </style>
 
 {% if request.query_params.get('error') == '1' %}
@@ -111,7 +141,7 @@
   </div>
   <form method="post" action="/assets/new" class="p-6" id="new-asset-form">
     <div class="inv-section">
-      <div class="inv-section-title">Basic information</div>
+      <div class="inv-section-title">1. Basic information</div>
       <div class="inv-field">
         <label class="inv-label" for="new-name">Name *</label>
         <input id="new-name" name="name" required class="inv-input" placeholder="e.g. prod-web-01" />
@@ -123,7 +153,7 @@
       </div>
     </div>
     <div class="inv-section">
-      <div class="inv-section-title">Classification</div>
+      <div class="inv-section-title">2. Classification</div>
       <div class="inv-field">
         <label class="inv-label" for="new-asset-type">Asset type</label>
         <select id="new-asset-type" name="asset_type_id" class="inv-input" onchange="renderCustomFields('new')">
@@ -146,7 +176,7 @@
       </div>
     </div>
     <div class="inv-section">
-      <div class="inv-section-title">Assignment</div>
+      <div class="inv-section-title">3. Assignment</div>
       <div class="inv-field">
         <label class="inv-label" for="new-user">Assigned user</label>
         <select id="new-user" name="assigned_user_id" class="inv-input">
@@ -158,7 +188,7 @@
       </div>
     </div>
     <div class="inv-section">
-      <div class="inv-section-title">External integration</div>
+      <div class="inv-section-title">4. External integration</div>
       <label class="inv-checkbox-row">
         <input type="checkbox" name="external_inventory" value="1" />
         <span>
@@ -187,12 +217,17 @@
         <p class="inv-summary-desc text-sm text-slate-600 mt-1">{{ it.description or '—' }}</p>
       </div>
       <button type="button" data-inv-toggle aria-expanded="false"
-        class="shrink-0 text-sm font-medium text-primary hover:underline pt-0.5">Expand</button>
+        class="inv-toggle shrink-0 pt-0.5">
+        <span data-inv-toggle-label>Expand</span>
+        <span class="inv-toggle-chevron" aria-hidden="true">▶</span>
+      </button>
     </div>
-    <div class="inv-panel hidden border-t border-slate-100 px-5 py-5" data-inv-panel>
-      <form method="post" action="/assets/{{ it.id }}/edit">
+    <div class="inv-panel hidden border-t border-slate-100 px-5 py-5 bg-slate-50/50" data-inv-panel>
+      <form method="post" action="/assets/{{ it.id }}/edit" class="inv-form">
+        {% if q %}<input type="hidden" name="q" value="{{ q }}" />{% endif %}
+        {% if external_only %}<input type="hidden" name="external_only" value="1" />{% endif %}
         <div class="inv-section">
-          <div class="inv-section-title">Basic information</div>
+          <div class="inv-section-title">1. Basic information</div>
           <div class="inv-field">
             <label class="inv-label" for="name-{{ it.id }}">Name *</label>
             <input id="name-{{ it.id }}" name="name" value="{{ it.name }}" required class="inv-input" />
@@ -204,7 +239,7 @@
           </div>
         </div>
         <div class="inv-section">
-          <div class="inv-section-title">Classification</div>
+          <div class="inv-section-title">2. Classification</div>
           <div class="inv-field">
             <label class="inv-label" for="type-{{ it.id }}">Asset type</label>
             <select id="type-{{ it.id }}" name="asset_type_id" class="inv-input"
@@ -237,7 +272,7 @@
           </div>
         </div>
         <div class="inv-section">
-          <div class="inv-section-title">Assignment</div>
+          <div class="inv-section-title">3. Assignment</div>
           <div class="inv-field">
             <label class="inv-label" for="user-{{ it.id }}">Assigned user</label>
             <select id="user-{{ it.id }}" name="assigned_user_id" class="inv-input">
@@ -249,7 +284,7 @@
           </div>
         </div>
         <div class="inv-section">
-          <div class="inv-section-title">External integration</div>
+          <div class="inv-section-title">4. External integration</div>
           <label class="inv-checkbox-row">
             <input type="checkbox" name="external_inventory" value="1" {% if it.external_inventory %}checked{% endif %} />
             <span>
@@ -260,7 +295,7 @@
         </div>
         {% set fields = type_fields.get(it.asset_type_id, []) if it.asset_type_id else [] %}
         <div id="custom-fields-{{ it.id }}" class="inv-section{% if not fields %} hidden{% endif %}">
-          <div class="inv-section-title">Additional attributes</div>
+          <div class="inv-section-title">5. Additional attributes</div>
           <div id="custom-fields-body-{{ it.id }}">
             {% for f in fields %}
             <div class="inv-field">
@@ -333,14 +368,17 @@ function renderEditCustomFields(itemId, typeId) {
   function setToggleState(item, expanded) {
     const btn = item.querySelector('[data-inv-toggle]');
     const panel = item.querySelector('[data-inv-panel]');
+    const label = item.querySelector('[data-inv-toggle-label]');
     if (!btn || !panel) return;
     if (expanded) {
       panel.classList.remove('hidden');
-      btn.textContent = 'Collapse';
+      item.classList.add('inv-item-expanded');
+      if (label) label.textContent = 'Collapse';
       btn.setAttribute('aria-expanded', 'true');
     } else {
       panel.classList.add('hidden');
-      btn.textContent = 'Expand';
+      item.classList.remove('inv-item-expanded');
+      if (label) label.textContent = 'Expand';
       btn.setAttribute('aria-expanded', 'false');
     }
   }
@@ -354,6 +392,12 @@ function renderEditCustomFields(itemId, typeId) {
       setToggleState(item, !expanded);
     });
   });
+
+  var openId = {{ open_item_id | default(none) | tojson }};
+  if (openId) {
+    var target = document.querySelector('.inv-item[data-inv-id="' + openId + '"]');
+    if (target) setToggleState(target, true);
+  }
 })();
 
 renderCustomFields('new');
