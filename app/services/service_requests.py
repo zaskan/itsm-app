@@ -131,7 +131,7 @@ def create_request(
     requester_user_id: int,
     name: str,
     description: str,
-    request_template_id: int | None = None,
+    request_template_id: int | str | None = None,
     specifications: dict | None = None,
 ) -> dict[str, Any]:
     name = name.strip()
@@ -140,6 +140,12 @@ def create_request(
         raise ValueError("Name is required")
     if not description:
         raise ValueError("Description is required")
+    tpl_id: int | None = None
+    if request_template_id is not None and request_template_id != "":
+        tpl = rtpl_svc.resolve_request_template(request_template_id)
+        if not tpl:
+            raise ValueError("Request template not found")
+        tpl_id = tpl["id"]
     now = _utc_now_iso()
     with db.cursor() as cur:
         public_id = _next_request_public_id(cur)
@@ -160,10 +166,10 @@ def create_request(
             actor_user_id=requester_user_id,
             payload={"public_id": public_id},
         )
-    if request_template_id:
+    if tpl_id:
         add_ritm_to_request(
             rid,
-            request_template_id=request_template_id,
+            request_template_id=tpl_id,
             specifications=specifications,
             actor_user_id=requester_user_id,
         )
@@ -182,15 +188,21 @@ def create_request(
 def add_ritm_to_request(
     request_ref: str | int,
     *,
-    request_template_id: int | None = None,
-    catalog_item_id: int | None = None,
+    request_template_id: int | str | None = None,
+    catalog_item_id: int | str | None = None,
     item_type: str = "",
     specifications: dict | None = None,
     packages: list | None = None,
     application: str = "",
     actor_user_id: int,
 ) -> dict[str, Any]:
-    tpl_id = request_template_id or catalog_item_id
+    raw_tpl = request_template_id if request_template_id is not None else catalog_item_id
+    tpl_id: int | None = None
+    if raw_tpl is not None and raw_tpl != "":
+        tpl = rtpl_svc.resolve_request_template(raw_tpl)
+        if not tpl:
+            raise ValueError("Request template not found")
+        tpl_id = tpl["id"]
     with db.cursor() as cur:
         req = _get_request_row(cur, request_ref)
         if not req:

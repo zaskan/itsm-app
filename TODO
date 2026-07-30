@@ -1,0 +1,8 @@
+- Al agregar usuario, se genera un token para ser usado por el mcp. 
+- Se incluye una opcion para refrescar el token.
+- Al loguearse u operar a través del MCP o la API, se puede usar el user id o el nombre de usuario
+- al abrir service request, hacer que sirva el nombre del request template o el id. Si se usa el nombre, debe ser el mismo pero reemplazando espacios por guiones.
+- Añadir la opcion de get de service requests a través de mcp
+- añadir la opcion de get de change requests a través de mcp
+
+

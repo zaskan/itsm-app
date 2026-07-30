@@ -14,18 +14,28 @@ from app import db
 security = HTTPBasic(auto_error=False)
 
 
-def _user_from_db(username: str) -> dict | None:
+def _user_from_db(identifier: str) -> dict | None:
+    """Resolve a user by numeric id or username."""
+    ident = identifier.strip()
+    if not ident:
+        return None
     with db.cursor() as cur:
-        cur.execute(
-            "SELECT id, username, password_hash, role FROM users WHERE username = ?",
-            (username,),
-        )
+        if ident.isdigit():
+            cur.execute(
+                "SELECT id, username, password_hash, role FROM users WHERE id = ?",
+                (int(ident),),
+            )
+        else:
+            cur.execute(
+                "SELECT id, username, password_hash, role FROM users WHERE username = ?",
+                (ident,),
+            )
         row = cur.fetchone()
     return db.row_to_dict(row)
 
 
-def verify_password(username: str, password: str) -> dict | None:
-    user = _user_from_db(username)
+def verify_password(identifier: str, password: str) -> dict | None:
+    user = _user_from_db(identifier)
     if not user:
         return None
     if not check_password_hash(user["password_hash"], password):

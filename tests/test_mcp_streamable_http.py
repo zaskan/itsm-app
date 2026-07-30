@@ -32,8 +32,20 @@ def _rpc(method: str, params: dict | None, req_id: int | str | None) -> dict:
 def test_mcp_jsonrpc_initialize_tools_list_and_call() -> None:
     """Single lifespan: initialize → initialized → tools/list → tools/call list_incidents."""
     import app.main as main_mod
+    from app.services import users_admin as usr_svc
 
     importlib.reload(main_mod)
+
+    # If prior tests created users with MCP tokens, auth is required.
+    headers = dict(JSON_HEADERS)
+    if usr_svc.any_user_has_mcp_token():
+        admin = usr_svc.get_user(1)
+        if admin and not admin.get("has_mcp_token"):
+            tok = usr_svc.regenerate_mcp_token(1)["mcp_token"]
+        else:
+            # Prefer a fresh token for user 1
+            tok = usr_svc.regenerate_mcp_token(1)["mcp_token"]
+        headers["X-ITSM-MCP-Token"] = tok
 
     with TestClient(main_mod.app) as client:
         r = client.post(
@@ -47,7 +59,7 @@ def test_mcp_jsonrpc_initialize_tools_list_and_call() -> None:
                 },
                 1,
             ),
-            headers=JSON_HEADERS,
+            headers=headers,
         )
         assert r.status_code == 200
         data = r.json()
@@ -56,10 +68,10 @@ def test_mcp_jsonrpc_initialize_tools_list_and_call() -> None:
         client.post(
             "/mcp/",
             json={"jsonrpc": "2.0", "method": "notifications/initialized"},
-            headers=JSON_HEADERS,
+            headers=headers,
         )
 
-        r = client.post("/mcp/", json=_rpc("tools/list", {}, 2), headers=JSON_HEADERS)
+        r = client.post("/mcp/", json=_rpc("tools/list", {}, 2), headers=headers)
         assert r.status_code == 200
         tools = r.json()["result"]["tools"]
         names = {t["name"] for t in tools}
@@ -67,11 +79,13 @@ def test_mcp_jsonrpc_initialize_tools_list_and_call() -> None:
         assert "create_kb_article" in names
         assert "rag_search_kb" in names
         assert "list_assets" in names
+        assert "get_request" in names
+        assert "get_change" in names
 
         r = client.post(
             "/mcp/",
             json=_rpc("tools/call", {"name": "list_incidents", "arguments": {}}, 3),
-            headers=JSON_HEADERS,
+            headers=headers,
         )
         assert r.status_code == 200
         text = r.json()["result"]["content"][0]["text"]

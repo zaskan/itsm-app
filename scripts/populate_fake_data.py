@@ -22,6 +22,8 @@ Options:
   --base-url URL  Override API base (default: Route host from ``oc get route``)
   --namespace NS  OpenShift namespace (default: current project or itsm-app)
   --user / --password   API credentials (default: secret bootstrap-admin-*)
+  --secure        Verify TLS certificates (default: skip, for private Route CAs)
+  --insecure      Skip TLS verification (default)
 """
 
 from __future__ import annotations
@@ -297,6 +299,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--namespace", default="", help="OpenShift namespace (default: oc project or itsm-app)")
     parser.add_argument("--user", default="", help="API username (HTTP Basic)")
     parser.add_argument("--password", default="", help="API password (HTTP Basic)")
+    tls = parser.add_mutually_exclusive_group()
+    tls.add_argument(
+        "--secure",
+        action="store_true",
+        help="Verify TLS certificates (default skips verify for OpenShift Routes)",
+    )
+    tls.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Skip TLS certificate verification (default)",
+    )
     parser.add_argument("--minimal", action="store_true", help="Smaller dataset")
     parser.add_argument("--no-workflow", action="store_true", help="Skip requests/changes/templates")
     parser.add_argument("--no-submit", action="store_true", help="Draft requests only")
@@ -680,12 +693,19 @@ def main() -> None:
         print(f"  Database: {target}")
     else:
         ns = args.namespace.strip() or None
+        if args.secure:
+            tls_verify: bool | None = True
+        elif args.insecure:
+            tls_verify = False
+        else:
+            tls_verify = None  # resolve_tls_verify default (off)
         try:
             with connect_openshift_backend(
                 base_url=args.base_url.strip() or None,
                 namespace=ns,
                 username=args.user.strip() or None,
                 password=args.password or None,
+                verify=tls_verify,
             ) as backend:
                 stats = run_populate(backend, args)
         except PopulateError as e:

@@ -42,6 +42,25 @@ def get_request_template(template_id: int) -> dict[str, Any] | None:
         return _row_out(dict(row)) if row else None
 
 
+def resolve_request_template(ref: str | int) -> dict[str, Any] | None:
+    """Resolve by numeric id or by name with spaces replaced by hyphens.
+
+    Example: name ``New Linux Virtual Machine`` → ref ``New-Linux-Virtual-Machine``.
+    """
+    if isinstance(ref, int) or (isinstance(ref, str) and ref.strip().isdigit()):
+        return get_request_template(int(ref))
+    slug = str(ref).strip()
+    if not slug:
+        return None
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM request_templates WHERE REPLACE(name, ' ', '-') = ?",
+            (slug,),
+        )
+        row = cur.fetchone()
+        return _row_out(dict(row)) if row else None
+
+
 def create_request_template(
     *,
     name: str,

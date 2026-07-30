@@ -130,8 +130,8 @@ def openid_configuration_metadata(request: Request) -> Response:
 
 @app.get("/oauth/authorize", include_in_schema=False)
 def oauth_authorize_stub(request: Request) -> Response:
-    """OAuth browser flow is not implemented; real auth for MCP is optional ``MCP_TOKEN`` header."""
-    msg = "This ITSM deployment does not use browser OAuth. Set ITSM_MCP_TOKEN and X-ITSM-MCP-Token in Cursor."
+    """OAuth browser flow is not implemented; real auth is per-user or shared MCP token."""
+    msg = "This ITSM deployment does not use browser OAuth. Use a per-user MCP token or MCP_TOKEN with X-ITSM-MCP-Token."
     accept = request.headers.get("accept") or ""
     if "application/json" in accept:
         return JSONResponse(
@@ -147,7 +147,7 @@ def oauth_token_stub() -> JSONResponse:
         status_code=400,
         content={
             "error": "unsupported_grant_type",
-            "error_description": "Use MCP with X-ITSM-MCP-Token or Authorization: Bearer matching MCP_TOKEN.",
+            "error_description": "Use MCP with X-ITSM-MCP-Token or Authorization: Bearer (per-user token or MCP_TOKEN).",
         },
     )
 

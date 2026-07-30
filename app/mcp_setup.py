@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 from typing import Any
@@ -21,7 +22,22 @@ from app.services import request_templates as rtpl_svc
 from app.services import service_requests as req_svc
 from app.services import task_templates as ttpl_svc
 from app.services import tasks as task_svc
+from app.services import users_admin as usr_svc
 from app.services import workflow as wf_svc
+
+_mcp_user: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "mcp_user", default=None
+)
+
+
+def _resolve_actor(actor_user_id: int | None = None) -> int:
+    """Actor is always the MCP token owner when present; else optional override / default 1."""
+    user = _mcp_user.get()
+    if user is not None:
+        return int(user["id"])
+    if actor_user_id is not None:
+        return actor_user_id
+    return 1
 
 
 def _mcp_transport_security() -> TransportSecuritySettings:
@@ -53,7 +69,8 @@ def build_mcp() -> FastMCP:
             "Workflow: create request from template, submit_request to auto-create CHG/CTASK; "
             "complete CTASKs sequentially to fulfill RITM/REQ. "
             "For KB: prefer rag_search_kb for natural-language questions. "
-            "MCP has no per-user auth; mirror REST credentials when auditing matters."
+            "Authenticate with a per-user MCP token (Users admin) or shared MCP_TOKEN env. "
+            "Mutating tools audit as the token owner; do not pass actor_user_id."
         ),
         stateless_http=True,
         json_response=True,
@@ -81,15 +98,15 @@ def build_mcp() -> FastMCP:
 
     @mcp.tool(
         name="create_incident",
-        description="Create an incident (system user context — prefer REST with credentials for audit).",
+        description="Create an incident; audited as the MCP token owner.",
     )
     def create_incident(
         title: str,
         description: str = "",
         severity: str = "medium",
-        actor_user_id: int = 1,
         inventory_asset_id: int | None = None,
     ) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = inc_svc.create_incident(
                 title=title,
@@ -104,7 +121,8 @@ def build_mcp() -> FastMCP:
         return json.dumps(snap, indent=2)
 
     @mcp.tool(name="add_comment", description="Add a comment to an open incident.")
-    def add_comment(incident_ref: str, body: str, actor_user_id: int = 1) -> str:
+    def add_comment(incident_ref: str, body: str) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = inc_svc.add_comment(incident_ref, body, actor_user_id)
         except ValueError as e:
@@ -112,7 +130,8 @@ def build_mcp() -> FastMCP:
         return json.dumps(snap, indent=2)
 
     @mcp.tool(name="update_severity", description="Change severity on an open incident.")
-    def update_severity(incident_ref: str, severity: str, actor_user_id: int = 1) -> str:
+    def update_severity(incident_ref: str, severity: str) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = inc_svc.update_severity(incident_ref, severity, actor_user_id)
         except ValueError as e:
@@ -125,9 +144,9 @@ def build_mcp() -> FastMCP:
     )
     def close_incident(
         incident_ref: str,
-        actor_user_id: int = 1,
         kb_article_id: int | None = None,
     ) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = inc_svc.close_incident(
                 incident_ref,
@@ -279,9 +298,9 @@ def build_mcp() -> FastMCP:
     def list_request_templates() -> str:
         return json.dumps(rtpl_svc.list_request_templates(), indent=2)
 
-    @mcp.tool(name="get_request_template", description="Get request template by id.")
-    def get_request_template(template_id: int) -> str:
-        item = rtpl_svc.get_request_template(template_id)
+    @mcp.tool(name="get_request_template", description="Get request template by id or name (spaces as hyphens).")
+    def get_request_template(template_ref: str) -> str:
+        item = rtpl_svc.resolve_request_template(template_ref)
         if not item:
             return json.dumps({"error": "not_found"})
         return json.dumps(item, indent=2)
@@ -392,13 +411,16 @@ def build_mcp() -> FastMCP:
             return json.dumps({"error": "not_found"})
         return json.dumps(d, indent=2)
 
-    @mcp.tool(name="create_request", description="Create a draft service request; optional template id.")
+    @mcp.tool(
+        name="create_request",
+        description="Create a draft service request; optional template id or name (spaces as hyphens).",
+    )
     def create_request(
-        actor_user_id: int = 1,
         name: str = "",
         description: str = "",
-        request_template_id: int | None = None,
+        request_template_id: int | str | None = None,
     ) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = req_svc.create_request(
                 requester_user_id=actor_user_id,
@@ -410,13 +432,13 @@ def build_mcp() -> FastMCP:
             return json.dumps({"error": str(e)})
         return json.dumps(snap, indent=2)
 
-    @mcp.tool(name="add_ritm", description="Add requested item to a draft request from template.")
+    @mcp.tool(name="add_ritm", description="Add requested item to a draft request from template id or name.")
     def add_ritm(
         request_ref: str,
-        request_template_id: int | None = None,
+        request_template_id: int | str | None = None,
         specifications_json: str = "{}",
-        actor_user_id: int = 1,
     ) -> str:
+        actor_user_id = _resolve_actor()
         try:
             specs = json.loads(specifications_json or "{}")
             row = req_svc.add_ritm_to_request(
@@ -430,7 +452,8 @@ def build_mcp() -> FastMCP:
         return json.dumps(row, indent=2)
 
     @mcp.tool(name="submit_request", description="Submit request; auto-creates CHG and CTASKs from catalog.")
-    def submit_request(request_ref: str, actor_user_id: int = 1) -> str:
+    def submit_request(request_ref: str) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = wf_svc.submit_request(request_ref, actor_user_id)
         except ValueError as e:
@@ -438,7 +461,8 @@ def build_mcp() -> FastMCP:
         return json.dumps(snap, indent=2)
 
     @mcp.tool(name="cancel_request", description="Cancel a service request.")
-    def cancel_request(request_ref: str, actor_user_id: int = 1) -> str:
+    def cancel_request(request_ref: str) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = req_svc.cancel_request(request_ref, actor_user_id)
         except ValueError as e:
@@ -450,7 +474,8 @@ def build_mcp() -> FastMCP:
         return json.dumps(chg_svc.list_changes(status=status), indent=2)
 
     @mcp.tool(name="create_change", description="Create change from standard change template.")
-    def create_change(change_template_id: int, actor_user_id: int = 1, custom_fields_json: str = "{}") -> str:
+    def create_change(change_template_id: int, custom_fields_json: str = "{}") -> str:
+        actor_user_id = _resolve_actor()
         try:
             cf = json.loads(custom_fields_json or "{}")
             snap = chg_svc.create_change_from_template(
@@ -487,8 +512,8 @@ def build_mcp() -> FastMCP:
         title: str = "",
         change_ref: str | None = None,
         task_template_id: int | None = None,
-        actor_user_id: int = 1,
     ) -> str:
+        actor_user_id = _resolve_actor()
         try:
             row = task_svc.create_task(
                 change_ref=change_ref,
@@ -501,7 +526,8 @@ def build_mcp() -> FastMCP:
         return json.dumps(row, indent=2)
 
     @mcp.tool(name="approve_change", description="Approve a pending Normal change (admin).")
-    def approve_change(change_ref: str, actor_user_id: int = 1) -> str:
+    def approve_change(change_ref: str) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = chg_svc.approve_change(change_ref, actor_user_id)
         except ValueError as e:
@@ -509,7 +535,8 @@ def build_mcp() -> FastMCP:
         return json.dumps(snap, indent=2)
 
     @mcp.tool(name="start_ctask", description="Start a pending change task.")
-    def start_ctask(change_ref: str, ctask_ref: str, actor_user_id: int = 1) -> str:
+    def start_ctask(change_ref: str, ctask_ref: str) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = chg_svc.start_ctask(change_ref, ctask_ref, actor_user_id)
         except ValueError as e:
@@ -521,8 +548,8 @@ def build_mcp() -> FastMCP:
         change_ref: str,
         ctask_ref: str,
         completion_comment: str = "",
-        actor_user_id: int = 1,
     ) -> str:
+        actor_user_id = _resolve_actor()
         try:
             snap = wf_svc.on_ctask_completed(
                 change_ref, ctask_ref, actor_user_id, completion_comment=completion_comment
@@ -569,44 +596,73 @@ def _normalize_mcp_token(value: str) -> str:
     return s
 
 
-def asgi_with_optional_mcp_auth(inner: Any, token: str | None) -> Any:
-    """Wrap MCP Starlette app with optional bearer / X-ITSM-MCP-Token check."""
+def asgi_with_optional_mcp_auth(inner: Any, env_token: str | None) -> Any:
+    """Wrap MCP Starlette app: accept shared MCP_TOKEN and/or per-user tokens."""
+
+    env_tok = env_token.strip() if env_token else None
 
     class MCPAuthASGI:
-        __slots__ = ("app", "token")
+        __slots__ = ("app", "env_token")
 
         def __init__(self, app: Any, tok: str | None) -> None:
             self.app = app
-            self.token = tok.strip() if tok else None
+            self.env_token = tok
 
         async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
             if scope["type"] != "http":
                 await self.app(scope, receive, send)
                 return
-            if self.token:
-                raw = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
-                header_tok = _normalize_mcp_token(raw.get("x-itsm-mcp-token", ""))
-                auth = raw.get("authorization", "")
-                bearer = ""
-                if auth.lower().startswith("bearer "):
-                    bearer = _normalize_mcp_token(auth[7:])
-                if header_tok != self.token and bearer != self.token:
-                    from starlette.responses import JSONResponse
 
-                    resp = JSONResponse(
-                        {
-                            "error": "invalid_token",
-                            "error_description": "Missing or wrong MCP token (X-ITSM-MCP-Token or Bearer).",
-                        },
-                        status_code=401,
-                    )
-                    await resp(scope, receive, send)
-                    return
-            await self.app(scope, receive, send)
+            # Require a token when the shared secret is set, or when any user has one.
+            require_auth = bool(self.env_token) or usr_svc.any_user_has_mcp_token()
+            raw = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+            header_tok = _normalize_mcp_token(raw.get("x-itsm-mcp-token", ""))
+            auth = raw.get("authorization", "")
+            bearer = ""
+            if auth.lower().startswith("bearer "):
+                bearer = _normalize_mcp_token(auth[7:])
+            presented = header_tok or bearer
 
-    if token:
-        return MCPAuthASGI(inner, token)
-    return inner
+            mcp_user: dict[str, Any] | None = None
+            ok = False
+            if presented:
+                # Prefer per-user token so identity binds to the token owner.
+                mcp_user = usr_svc.get_user_by_mcp_token(presented)
+                if mcp_user is not None:
+                    ok = True
+                elif self.env_token and presented == self.env_token:
+                    ok = True
+                elif not require_auth:
+                    ok = True
+            elif not require_auth:
+                ok = True
+
+            if not ok:
+                from starlette.responses import JSONResponse
+
+                resp = JSONResponse(
+                    {
+                        "error": "invalid_token",
+                        "error_description": (
+                            "Missing or wrong MCP token (X-ITSM-MCP-Token or Bearer)."
+                        ),
+                    },
+                    status_code=401,
+                )
+                await resp(scope, receive, send)
+                return
+
+            state = scope.setdefault("state", {})
+            if isinstance(state, dict):
+                state["mcp_user"] = mcp_user
+
+            token = _mcp_user.set(mcp_user)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                _mcp_user.reset(token)
+
+    return MCPAuthASGI(inner, env_tok)
 
 
 def mcp_mount_app(mcp: FastMCP) -> Any:

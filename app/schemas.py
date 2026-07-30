@@ -179,6 +179,16 @@ class UserOut(BaseModel):
     id: int
     username: str
     role: str
+    has_mcp_token: bool = False
+    mcp_token: str | None = None
+
+
+class UserMcpTokenOut(BaseModel):
+    id: int
+    username: str
+    role: str
+    mcp_token: str
+    has_mcp_token: bool = True
 
 
 class KBArticleOut(BaseModel):
@@ -350,7 +360,7 @@ class RequestTemplateOut(BaseModel):
 class RequestCreate(BaseModel):
     name: str
     description: str
-    request_template_id: int | None = None
+    request_template_id: int | str | None = None
     specifications: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -394,8 +404,8 @@ class RequestOut(BaseModel):
 
 
 class RitmCreate(BaseModel):
-    request_template_id: int | None = None
-    catalog_item_id: int | None = None
+    request_template_id: int | str | None = None
+    catalog_item_id: int | str | None = None
     item_type: str = ""
     specifications: dict[str, Any] = Field(default_factory=dict)
     packages: list[str] = Field(default_factory=list)

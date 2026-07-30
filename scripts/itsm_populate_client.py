@@ -141,14 +141,23 @@ def resolve_api_credentials(
 class RemotePopulateBackend:
     """Populate data through the running ITSM REST API (/api/v1)."""
 
-    def __init__(self, base_url: str, username: str, password: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        username: str,
+        password: str,
+        *,
+        verify: bool = True,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_root = f"{self.base_url}/api/v1"
+        self.tls_verify = verify
         self._client = httpx.Client(
             auth=(username, password),
             timeout=httpx.Timeout(60.0, connect=15.0),
             headers={"Accept": "application/json"},
             follow_redirects=True,
+            verify=verify,
         )
 
     def close(self) -> None:
@@ -388,22 +397,50 @@ class RemotePopulateBackend:
         return self._request("POST", f"/changes/{change_ref}/tasks/{task_ref}/complete")
 
 
+def resolve_tls_verify(*, secure: bool | None = None) -> bool:
+    """Whether to verify TLS certificates.
+
+    OpenShift edge Routes often use a cluster CA that is not in the local trust
+    store. Default is **no** verification unless ``--secure`` / ``ITSM_TLS_VERIFY=1``.
+    """
+    if secure is True:
+        return True
+    if secure is False:
+        return False
+    raw = os.environ.get("ITSM_TLS_VERIFY", "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    # Default: skip verify (typical for *.apps.* self-signed / private CA).
+    return False
+
+
 def connect_openshift_backend(
     *,
     base_url: str | None = None,
     namespace: str | None = None,
     username: str | None = None,
     password: str | None = None,
+    verify: bool | None = None,
 ) -> RemotePopulateBackend:
     ns = namespace or openshift_current_namespace()
     url = resolve_api_base_url(base_url=base_url, namespace=ns)
     user, pw = resolve_api_credentials(username=username, password=password, namespace=ns)
-    backend = RemotePopulateBackend(url, user, pw)
+    tls_verify = resolve_tls_verify(secure=verify)
+    backend = RemotePopulateBackend(url, user, pw, verify=tls_verify)
     try:
         app = backend.verify()
-    except PopulateError as e:
+    except (PopulateError, httpx.HTTPError) as e:
+        hint = ""
+        if tls_verify:
+            hint = (
+                " TLS verification is on; retry without --secure, or set "
+                "ITSM_TLS_VERIFY=0 for a private/self-signed Route cert."
+            )
         raise PopulateError(
-            f"Cannot reach ITSM API at {url} (namespace {ns}): {e}"
+            f"Cannot reach ITSM API at {url} (namespace {ns}): {e}.{hint}"
         ) from e
-    print(f"Connected to {url} (app title: {app.get('app_title', 'ITSM')})")
+    tls_note = "TLS verify on" if tls_verify else "TLS verify off"
+    print(f"Connected to {url} ({tls_note}; app title: {app.get('app_title', 'ITSM')})")
     return backend

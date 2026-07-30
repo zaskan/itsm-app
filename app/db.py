@@ -20,7 +20,8 @@ _SCHEMA_SQL = """
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'user'
+                role TEXT NOT NULL DEFAULT 'user',
+                mcp_token_hash TEXT UNIQUE
             );
 
             CREATE TABLE IF NOT EXISTS asset_types (
@@ -391,6 +392,7 @@ def _migrate_legacy_schema() -> None:
         _migrate_service_request_resolution(cur)
         _migrate_assigned_user_fields(cur)
         _migrate_change_tasks_standalone(cur)
+        _migrate_users_mcp_token(cur)
 
         cur.execute("DROP TABLE IF EXISTS ci_relationships")
         cur.execute("DROP TABLE IF EXISTS configuration_items")
@@ -614,6 +616,12 @@ def _migrate_assigned_user_fields(cur: sqlite3.Cursor) -> None:
                 REFERENCES users(id) ON DELETE SET NULL
                 """
             )
+
+
+def _migrate_users_mcp_token(cur: sqlite3.Cursor) -> None:
+    cols = _table_columns(cur, "users")
+    if cols and "mcp_token_hash" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN mcp_token_hash TEXT UNIQUE")
 
 
 def _migrate_change_tasks_standalone(cur: sqlite3.Cursor) -> None:

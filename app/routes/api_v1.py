@@ -421,6 +421,21 @@ def api_create_user(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
 
 
+@router.post(
+    "/users/{user_id}/mcp-token/refresh",
+    response_model=schemas.UserMcpTokenOut,
+)
+def api_refresh_user_mcp_token(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+    user_id: int,
+) -> dict:
+    del user
+    out = usr_svc.regenerate_mcp_token(user_id)
+    if not out:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    return out
+
+
 @router.patch("/users/{user_id}", response_model=schemas.UserOut)
 def api_update_user(
     admin: Annotated[dict, Depends(get_current_user_basic_admin)],
@@ -715,28 +730,31 @@ def api_request_templates_create(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
 
 
-@router.get("/request-templates/{template_id}", response_model=schemas.RequestTemplateOut)
+@router.get("/request-templates/{template_ref}", response_model=schemas.RequestTemplateOut)
 def api_request_templates_get(
     user: Annotated[dict, Depends(get_current_user_basic)],
-    template_id: int,
+    template_ref: str,
 ) -> dict:
     del user
-    item = rtpl_svc.get_request_template(template_id)
+    item = rtpl_svc.resolve_request_template(template_ref)
     if not item:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return item
 
 
-@router.patch("/request-templates/{template_id}", response_model=schemas.RequestTemplateOut)
+@router.patch("/request-templates/{template_ref}", response_model=schemas.RequestTemplateOut)
 def api_request_templates_patch(
     user: Annotated[dict, Depends(get_current_user_basic_admin)],
-    template_id: int,
+    template_ref: str,
     body: schemas.RequestTemplateUpdate,
 ) -> dict:
     del user
+    existing = rtpl_svc.resolve_request_template(template_ref)
+    if not existing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     try:
         item = rtpl_svc.update_request_template(
-            template_id,
+            existing["id"],
             name=body.name,
             description=body.description,
             change_template_id=body.change_template_id,
@@ -750,13 +768,16 @@ def api_request_templates_patch(
     return item
 
 
-@router.delete("/request-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/request-templates/{template_ref}", status_code=status.HTTP_204_NO_CONTENT)
 def api_request_templates_delete(
     user: Annotated[dict, Depends(get_current_user_basic_admin)],
-    template_id: int,
+    template_ref: str,
 ) -> Response:
     del user
-    if not rtpl_svc.delete_request_template(template_id):
+    existing = rtpl_svc.resolve_request_template(template_ref)
+    if not existing:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    if not rtpl_svc.delete_request_template(existing["id"]):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

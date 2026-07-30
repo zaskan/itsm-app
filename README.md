@@ -323,13 +323,15 @@ When one or more webhook URLs are enabled, incident and workflow changes trigger
 
 - **KB RAG:** With `ITSM_EMBEDDING_BASE_URL` and `ITSM_EMBEDDING_MODEL` set, tool `**rag_search_kb`** runs semantic retrieval over indexed articles. Prefer it over `**search_kb`** for paraphrased or conceptual questions.
 - **URL:** `{base URL}/mcp/` (trailing slash avoids redirect issues with some HTTP clients.)
-- **Auth:** If `MCP_TOKEN` is set, send `**X-ITSM-MCP-Token: <token>`** or `**Authorization: Bearer <token>`**. Wrong or missing token → **401** with OAuth-style JSON. A **404** usually means the URL or route is wrong, not the token.
+- **Auth:** Prefer a **per-user MCP token** (generated when an admin creates a user, or via Refresh on the Users page / `POST /api/v1/users/{id}/mcp-token/refresh`). Send `**X-ITSM-MCP-Token: <token>`** or `**Authorization: Bearer <token>`**. A shared env `**MCP_TOKEN**` is still accepted as a fallback. If `MCP_TOKEN` is set **or** any user has an MCP token, unauthenticated MCP calls return **401**. If neither is configured, MCP stays open (development only). Wrong or missing token → **401** with OAuth-style JSON. A **404** usually means the URL or route is wrong, not the token.
 - **OpenShift / ingress:** The MCP library’s DNS rebinding check defaults to localhost-only and causes **421 Misdirected Request / Invalid Host header** when a valid token reaches the app. This repo disables that unless `**MCP_ALLOWED_HOSTS`** is set (see env table).
 - **Cursor / MCP authorization discovery:** The MCP spec requires **OAuth Protected Resource Metadata** (RFC 9728). Clients typically call `**/.well-known/oauth-protected-resource/mcp`** first (aligned with the `**/mcp`** mount). This app serves valid **200** metadata documents there and at `**/.well-known/oauth-authorization-server`**, plus stub `**/oauth/*`** endpoints so discovery does not end in **404 Not Found**. Real access control for this deployment is still **optional `MCP_TOKEN`** and the `**X-ITSM-MCP-Token**` header in Cursor.
 
 ### MCP token (create and configure)
 
-The app does **not** issue tokens over HTTP. You choose a long random string and use it as the shared secret.
+**Per-user tokens (recommended):** when an administrator creates a user in the UI or via `POST /api/v1/users`, the response includes a one-time `mcp_token`. Use **Refresh MCP token** on the Users page (or `POST /api/v1/users/{id}/mcp-token/refresh`) to rotate it — the plaintext is shown only once.
+
+**Shared env token (optional fallback):**
 
 1. **Generate a value** (example):
   ```bash
@@ -339,13 +341,13 @@ The app does **not** issue tokens over HTTP. You choose a long random string and
   ```bash
    export MCP_TOKEN="<paste-the-generated-string>"
   ```
-   Omit `MCP_TOKEN` entirely if you want MCP open without a header (development only).
+   Omit `MCP_TOKEN` entirely if you rely only on per-user tokens (or want MCP open when no user tokens exist yet).
 3. **OpenShift / Kubernetes:** put the **same** string in the cluster secret as `mcp-token` (see [k8s/secret.yaml](k8s/secret.yaml)). The Deployment maps that key to env `MCP_TOKEN`. After changing the secret:
   ```bash
    oc apply -f k8s/secret.yaml   # or patch itsm-secrets
    oc rollout restart deployment/itsm-app -n itsm-app
   ```
-4. **Read the token currently deployed** (to configure a client without rotation):
+4. **Read the shared token currently deployed** (to configure a client without rotation):
   ```bash
    oc get secret itsm-secrets -n itsm-app -o jsonpath='{.data.mcp-token}' | base64 -d; echo
   ```
@@ -365,6 +367,8 @@ The app does **not** issue tokens over HTTP. You choose a long random string and
    curl -sS -H "X-ITSM-MCP-Token: ${TOKEN}" "https://<route-host>/mcp/"
   ```
    A **401** `invalid_token` with a correct secret in the cluster usually means the shell sent quotes inside the header (e.g. `-H "X-ITSM-MCP-Token: \"${TOKEN}\""` is wrong). The app also accepts a single pair of surrounding quotes on the token for copy-paste mistakes.
+
+HTTP Basic for the REST API and the UI login accept **username or numeric user id** as the login identifier.
 
 ### Tools
 
@@ -387,8 +391,8 @@ The app does **not** issue tokens over HTTP. You choose a long random string and
 | `list_change_templates` / `create_change_template`                 | Change template admin.                           |
 | `list_task_templates` / `create_task_template`                     | Task template admin.                             |
 | `list_custom_fields` / `create_custom_field`                       | Field definitions per scope.                     |
-| `list_requests` / `create_request` / `add_ritm` / `submit_request` | Service request workflow.                        |
-| `list_changes` / `create_change` / `get_change` / `approve_change` | Change workflow.                                 |
+| `list_requests` / `get_request` / `create_request` / `add_ritm` / `submit_request` | Service request workflow (`get_request` by id or `REQ-…`). |
+| `list_changes` / `create_change` / `get_change` / `approve_change` | Change workflow (`get_change` by id or `CHG-…`). |
 | `list_tasks` / `get_task` / `create_task`                          | Task list and create.                            |
 | `start_ctask` / `complete_ctask`                                   | Task execution; fulfills RITM/REQ when all done. |
 

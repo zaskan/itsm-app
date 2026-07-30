@@ -550,10 +550,18 @@ def webhook_delete(request: Request, webhook_id: int) -> RedirectResponse:
 def users_page(request: Request) -> HTMLResponse:
     user = require_admin_session(request)
     users = usr_svc.list_users()
+    new_token = request.query_params.get("mcp_token")
+    token_user = request.query_params.get("token_user")
     return templates.TemplateResponse(
         request,
         "users.html",
-        _page(request, user, users=users),
+        _page(
+            request,
+            user,
+            users=users,
+            new_mcp_token=new_token,
+            token_user=token_user,
+        ),
     )
 
 
@@ -566,10 +574,33 @@ def users_new(
 ) -> RedirectResponse:
     require_admin_session(request)
     try:
-        usr_svc.create_user(username, password, role)
+        created = usr_svc.create_user(username, password, role)
     except Exception:
         return RedirectResponse("/users?error=1", status_code=303)
-    return RedirectResponse("/users", status_code=303)
+    from urllib.parse import quote
+
+    tok = quote(created["mcp_token"], safe="")
+    uname = quote(created["username"], safe="")
+    return RedirectResponse(
+        f"/users?mcp_token={tok}&token_user={uname}",
+        status_code=303,
+    )
+
+
+@router.post("/users/{user_id}/refresh-mcp-token")
+def users_refresh_mcp_token(request: Request, user_id: int) -> RedirectResponse:
+    require_admin_session(request)
+    out = usr_svc.regenerate_mcp_token(user_id)
+    if not out:
+        return RedirectResponse("/users", status_code=303)
+    from urllib.parse import quote
+
+    tok = quote(out["mcp_token"], safe="")
+    uname = quote(out["username"], safe="")
+    return RedirectResponse(
+        f"/users?mcp_token={tok}&token_user={uname}",
+        status_code=303,
+    )
 
 
 @router.post("/users/{user_id}/edit")
