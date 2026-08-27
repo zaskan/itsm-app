@@ -1,0 +1,141 @@
+<div class="incident-detail-page">
+  <div class="inc-form-panel">
+    <div class="inc-main-form">
+      <div class="inc-form-grid">
+        <div class="inc-field">
+          <label for="chg-number">Number</label>
+          <input id="chg-number" type="text" readonly value="{{ change.display_number }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="chg-opened">Opened</label>
+          <input id="chg-opened" type="text" readonly value="{{ change.opened_display }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="chg-type">Type</label>
+          <input id="chg-type" type="text" readonly value="{{ change.type_label }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="chg-approved">Approved</label>
+          <input id="chg-approved" type="text" readonly value="{{ change.approved_display }}" class="inc-input inc-readonly" placeholder="" />
+        </div>
+        <div class="inc-field">
+          <label for="chg-approver">Approved by</label>
+          <input id="chg-approver" type="text" readonly value="{{ change.approved_by_username or '—' }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="chg-watch">Watch list</label>
+          <input id="chg-watch" type="text" readonly disabled placeholder="" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field inc-field-wide">
+          <label for="chg-state">State</label>
+          <input id="chg-state" type="text" readonly value="{{ change.state_label }}" class="inc-input inc-readonly" />
+        </div>
+      </div>
+
+      {% if change.ritm %}
+      <div class="inc-field inc-field-full">
+        <label>Related request</label>
+        <input type="text" readonly class="inc-input inc-readonly"
+          value="RITM {{ change.ritm.public_id }} · REQ {{ change.ritm.request_public_id }}" />
+      </div>
+      {% endif %}
+
+      <div class="inc-field inc-field-full">
+        <label for="chg-risk">Risk assessment</label>
+        <textarea id="chg-risk" readonly rows="2" class="inc-input inc-readonly inc-textarea">{{ change.risk_assessment }}</textarea>
+      </div>
+      <div class="inc-field inc-field-full">
+        <label for="chg-impl">Implementation plan</label>
+        <textarea id="chg-impl" readonly rows="3" class="inc-input inc-readonly inc-textarea">{{ change.implementation_plan }}</textarea>
+      </div>
+      <div class="inc-field inc-field-full">
+        <label for="chg-test">Test plan</label>
+        <textarea id="chg-test" readonly rows="2" class="inc-input inc-readonly inc-textarea">{{ change.test_plan }}</textarea>
+      </div>
+      <div class="inc-field inc-field-full">
+        <label for="chg-backout">Backout plan</label>
+        <textarea id="chg-backout" readonly rows="2" class="inc-input inc-readonly inc-textarea">{{ change.backout_plan }}</textarea>
+      </div>
+    </div>
+
+    <div class="inc-field inc-field-full inc-asset-row" style="margin-top:1rem;padding-top:1rem;border-top:1px solid #e5e7eb;">
+      <label>Change tasks</label>
+      {% if change.tasks %}
+      <ol class="inc-task-list">
+        {% for t in change.tasks %}
+        <li class="inc-task-card">
+          <div class="inc-task-head">
+            <div>
+              <p class="inc-ritm-id">{{ t.public_id }}</p>
+              <p class="inc-ritm-title">{{ t.sequence_order }}. {{ t.title }}</p>
+              <p class="inc-ritm-meta">Assigned: {{ t.assigned_username or '—' }}{% if t.kb_article_title %} · KB: {{ t.kb_article_title }}{% endif %}</p>
+            </div>
+            <span class="inc-task-status">{{ t.status | replace('_',' ') | title }}</span>
+          </div>
+          {% if t.status == 'pending' %}
+          <form method="post" action="/changes/{{ change.public_id }}/tasks/{{ t.public_id }}/start" class="inc-task-action">
+            <button type="submit" class="inc-related-link" style="border:none;background:none;padding:0;cursor:pointer;">Start task</button>
+          </form>
+          {% elif t.status == 'in_progress' %}
+          <form method="post" action="/changes/{{ change.public_id }}/tasks/{{ t.public_id }}/complete" class="inc-task-complete-form"
+            onsubmit="return confirm('Mark task complete?');">
+            <textarea name="completion_comment" rows="2" placeholder="Completion notes (optional)" class="inc-input inc-textarea"></textarea>
+            <button type="submit" class="inc-secondary-btn">Complete task</button>
+          </form>
+          {% elif t.status == 'completed' and t.completion_comment %}
+          <p class="inc-ritm-meta">Notes: {{ t.completion_comment }}</p>
+          {% endif %}
+          <a href="/tasks/{{ t.public_id }}" class="inc-related-link">Open task detail</a>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="inc-muted">No tasks on this change.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <form id="chg-approve-form" method="post" action="/changes/{{ change.public_id }}/approve" class="hidden"></form>
+
+  <div class="inc-related-divider">
+    <button type="button" class="inc-related-btn" disabled>Related Search Results ›</button>
+  </div>
+
+  <section class="inc-activities" aria-labelledby="chg-activities-heading">
+    <h2 id="chg-activities-heading">Activities: {{ change.activities | length }}</h2>
+    <div class="inc-activity-list">
+      {% for activity in change.activities %}
+      <article class="inc-activity-card">
+        <div class="inc-activity-avatar" aria-hidden="true">{{ activity.actor_username[0] | upper }}</div>
+        <div class="inc-activity-body">
+          <div class="inc-activity-meta">
+            <span class="inc-activity-user">{{ activity.actor_username }}</span>
+            <time class="inc-activity-time" datetime="{{ activity.created_at }}">{{ activity.created_at_display }}</time>
+          </div>
+          {% for line in activity.lines %}
+          <p class="inc-activity-line">{{ line }}</p>
+          {% endfor %}
+        </div>
+      </article>
+      {% else %}
+      <p class="inc-muted">No activity yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="inc-footer-bar">
+    <div class="inc-toolbar inc-footer-toolbar">
+      {% if is_admin and change.status == 'pending_approval' %}
+      <button type="submit" class="inc-tool-btn inc-tool-primary" form="chg-approve-form"
+        onclick="return confirm('Approve this change?');">Approve</button>
+      {% endif %}
+    </div>
+    <div class="inc-related-links">
+      <span class="inc-related-links-label">Related Links</span>
+      <a href="/changes" class="inc-related-link">Back to list</a>
+      {% if change.ritm %}
+      <a href="/requests/{{ change.ritm.request_public_id }}" class="inc-related-link">View request</a>
+      {% endif %}
+    </div>
+  </div>
+</div>

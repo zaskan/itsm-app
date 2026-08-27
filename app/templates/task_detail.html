@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_record_list_header.html" import render as record_list_header %}
+{% set active_nav = 'tasks' %}
+{% block title %}Task {{ task.display_number }} — {{ app_title }}{% endblock %}
+{% block list_header %}
+{% call record_list_header("Task", task.display_number, "/tasks", "Back to tasks", "Task actions") %}
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Discuss</button>
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Follow</button>
+  {% if task.status == 'pending' %}
+  <button type="submit" class="inc-tool-btn inc-tool-primary" form="task-start-form">Start</button>
+  {% elif task.status == 'in_progress' %}
+  <button type="submit" class="inc-tool-btn inc-tool-primary" form="task-complete-form">Complete</button>
+  {% endif %}
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Responses</button>
+{% endcall %}
+{% endblock %}
+
+{% block content %}
+{% include "_task_detail_body.html" %}
+{% endblock %}

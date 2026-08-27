@@ -1,0 +1,45 @@
+<div id="nx-all-panel" class="nx-all-panel hidden" role="dialog" aria-label="All menus">
+  <div class="nx-all-filter">
+    <input type="search" id="nx-all-filter" placeholder="Filter menus" autocomplete="off" />
+  </div>
+  <div class="nx-all-scroll" id="nx-all-scroll">
+    <div class="nx-all-section">
+      <div class="nx-all-group" data-all-group>Work</div>
+      <a href="/incidents" data-all-link class="nx-all-link {% if active_nav == 'incidents' %}nx-all-active{% endif %}">Incidents</a>
+      <a href="/requests" data-all-link class="nx-all-link {% if active_nav == 'requests' %}nx-all-active{% endif %}">Requests</a>
+      <a href="/changes" data-all-link class="nx-all-link {% if active_nav == 'changes' %}nx-all-active{% endif %}">Changes</a>
+      <a href="/tasks" data-all-link class="nx-all-link {% if active_nav == 'tasks' %}nx-all-active{% endif %}">Tasks</a>
+    </div>
+
+    <div class="nx-all-section">
+      <div class="nx-all-group" data-all-group>Knowledge</div>
+      <a href="/kb" data-all-link class="nx-all-link {% if active_nav == 'kb' %}nx-all-active{% endif %}">Knowledge Base</a>
+    </div>
+
+    <div class="nx-all-section">
+      <div class="nx-all-group" data-all-group>Configuration</div>
+      <a href="/assets" data-all-link class="nx-all-link {% if active_nav == 'assets' %}nx-all-active{% endif %}">Assets</a>
+      {% if is_admin %}
+      <a href="/asset-types" data-all-link class="nx-all-link {% if active_nav == 'asset_types' %}nx-all-active{% endif %}">Asset types</a>
+      <a href="/request-templates" data-all-link class="nx-all-link {% if active_nav == 'request_templates' %}nx-all-active{% endif %}">Request templates</a>
+      <a href="/change-templates" data-all-link class="nx-all-link {% if active_nav == 'change_templates' %}nx-all-active{% endif %}">Standard change templates</a>
+      <a href="/task-templates" data-all-link class="nx-all-link {% if active_nav == 'task_templates' %}nx-all-active{% endif %}">Standard task templates</a>
+      {% endif %}
+    </div>
+
+    {% if is_admin %}
+    <div class="nx-all-section">
+      <div class="nx-all-group" data-all-group>Administration</div>
+      <a href="/settings" data-all-link class="nx-all-link {% if active_nav == 'settings' %}nx-all-active{% endif %}">Settings</a>
+      <a href="/webhook-config" data-all-link class="nx-all-link {% if active_nav == 'webhook' %}nx-all-active{% endif %}">Webhook config</a>
+      <a href="/users" data-all-link class="nx-all-link {% if active_nav == 'users' %}nx-all-active{% endif %}">Users</a>
+    </div>
+    {% endif %}
+
+    <div class="nx-all-section">
+      <div class="nx-all-group" data-all-group>Developer</div>
+      <a href="/docs" data-all-link class="nx-all-link">OpenAPI docs</a>
+      <a href="/api/v1" data-all-link class="nx-all-link">REST API</a>
+    </div>
+  </div>
+</div>

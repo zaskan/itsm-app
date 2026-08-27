@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_record_list_header.html" import render as record_list_header %}
+{% set active_nav = 'changes' %}
+{% block title %}Change {{ change.display_number }} — {{ app_title }}{% endblock %}
+{% block list_header %}
+{% call record_list_header("Change", change.display_number, "/changes", "Back to changes", "Change actions") %}
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Discuss</button>
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Follow</button>
+  {% if is_admin and change.status == 'pending_approval' %}
+  <button type="submit" class="inc-tool-btn inc-tool-primary" form="chg-approve-form"
+    onclick="return confirm('Approve this change?');">Approve</button>
+  {% endif %}
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Responses</button>
+{% endcall %}
+{% endblock %}
+
+{% block content %}
+{% include "_change_detail_body.html" %}
+{% endblock %}

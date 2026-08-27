@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_record_list_header.html" import render as record_list_header %}
+{% set active_nav = 'incidents' %}
+{% block title %}Incident {{ incident.display_number }} — {{ app_title }}{% endblock %}
+{% block list_header %}
+{% call record_list_header("Incident", incident.display_number, "/incidents", "Back to incidents", "Incident actions") %}
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Discuss</button>
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Follow</button>
+  {% if incident.status == 'open' %}
+  <button type="submit" class="inc-tool-btn inc-tool-primary" form="inc-update-form">Update</button>
+  <button type="submit" class="inc-tool-btn" form="inc-resolve-form"
+    onclick="return confirm('Resolve this incident?');">Resolve</button>
+  {% endif %}
+  <form id="inc-delete-form" method="post" action="/incidents/{{ incident.public_id }}/delete"
+    class="inc-inline-form" onsubmit="return confirm('Permanently delete this ticket and all comments?');">
+    <button type="submit" class="inc-tool-btn inc-tool-danger">Delete</button>
+  </form>
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Responses</button>
+{% endcall %}
+{% endblock %}
+
+{% block content %}
+{% include "_incident_detail_body.html" %}
+{% endblock %}

@@ -1,0 +1,113 @@
+<div class="incident-detail-page">
+  <div class="inc-form-panel">
+    <div class="inc-main-form">
+      <div class="inc-form-grid">
+        <div class="inc-field">
+          <label for="task-number">Number</label>
+          <input id="task-number" type="text" readonly value="{{ task.display_number }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="task-opened">Opened</label>
+          <input id="task-opened" type="text" readonly value="{{ task.opened_display }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="task-assigned">Assigned to</label>
+          <input id="task-assigned" type="text" readonly value="{{ task.assigned_username or '—' }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="task-completed">Completed</label>
+          <input id="task-completed" type="text" readonly value="{{ task.completed_display }}" class="inc-input inc-readonly" placeholder="" />
+        </div>
+        <div class="inc-field">
+          <label for="task-change">Change</label>
+          {% if task.change_public_id %}
+          <a href="/changes/{{ task.change_public_id }}" class="inc-input inc-readonly inc-link-field">{{ task.change_public_id }}</a>
+          {% else %}
+          <input id="task-change" type="text" readonly value="—" class="inc-input inc-readonly" />
+          {% endif %}
+        </div>
+        <div class="inc-field">
+          <label for="task-kb">Knowledge article</label>
+          <input id="task-kb" type="text" readonly value="{{ task.kb_article_title or '—' }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field inc-field-wide">
+          <label for="task-state">State</label>
+          <input id="task-state" type="text" readonly value="{{ task.state_label }}" class="inc-input inc-readonly" />
+        </div>
+      </div>
+
+      <div class="inc-field inc-field-full">
+        <label for="task-short-desc">Short description</label>
+        <input id="task-short-desc" type="text" readonly value="{{ task.title }}" class="inc-input inc-readonly" />
+      </div>
+
+      <div class="inc-field inc-field-full">
+        <label for="task-description">Description</label>
+        <textarea id="task-description" readonly rows="3" class="inc-input inc-readonly inc-textarea">{{ task.description or 'No description.' }}</textarea>
+      </div>
+
+      {% if task.status == 'completed' and task.completion_comment %}
+      <div class="inc-field inc-field-full">
+        <label for="task-notes">Completion notes</label>
+        <textarea id="task-notes" readonly rows="2" class="inc-input inc-readonly inc-textarea">{{ task.completion_comment }}</textarea>
+      </div>
+      {% elif task.status == 'in_progress' %}
+      <form id="task-complete-form" method="post"
+        action="{% if task.change_public_id %}/changes/{{ task.change_public_id }}/tasks/{{ task.public_id }}/complete{% else %}/tasks/{{ task.public_id }}/complete{% endif %}"
+        class="inc-field inc-field-full">
+        <label for="task-complete-notes">Completion notes <span class="inc-label-hint">(optional)</span></label>
+        <textarea id="task-complete-notes" name="completion_comment" rows="3" class="inc-input inc-textarea" placeholder="What was done?"></textarea>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if task.status == 'pending' %}
+  <form id="task-start-form" method="post"
+    action="{% if task.change_public_id %}/changes/{{ task.change_public_id }}/tasks/{{ task.public_id }}/start{% else %}/tasks/{{ task.public_id }}/start{% endif %}"
+    class="hidden"></form>
+  {% endif %}
+
+  <div class="inc-related-divider">
+    <button type="button" class="inc-related-btn" disabled>Related Search Results ›</button>
+  </div>
+
+  <section class="inc-activities" aria-labelledby="task-activities-heading">
+    <h2 id="task-activities-heading">Activities: {{ task.activities | length }}</h2>
+    <div class="inc-activity-list">
+      {% for activity in task.activities %}
+      <article class="inc-activity-card">
+        <div class="inc-activity-avatar" aria-hidden="true">{{ activity.actor_username[0] | upper }}</div>
+        <div class="inc-activity-body">
+          <div class="inc-activity-meta">
+            <span class="inc-activity-user">{{ activity.actor_username }}</span>
+            <time class="inc-activity-time" datetime="{{ activity.created_at }}">{{ activity.created_at_display }}</time>
+          </div>
+          {% for line in activity.lines %}
+          <p class="inc-activity-line">{{ line }}</p>
+          {% endfor %}
+        </div>
+      </article>
+      {% else %}
+      <p class="inc-muted">No activity yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="inc-footer-bar">
+    <div class="inc-toolbar inc-footer-toolbar">
+      {% if task.status == 'pending' %}
+      <button type="submit" class="inc-tool-btn inc-tool-primary" form="task-start-form">Start</button>
+      {% elif task.status == 'in_progress' %}
+      <button type="submit" class="inc-tool-btn inc-tool-primary" form="task-complete-form">Complete</button>
+      {% endif %}
+    </div>
+    <div class="inc-related-links">
+      <span class="inc-related-links-label">Related Links</span>
+      <a href="/tasks" class="inc-related-link">Back to list</a>
+      {% if task.change_public_id %}
+      <a href="/changes/{{ task.change_public_id }}" class="inc-related-link">View change</a>
+      {% endif %}
+    </div>
+  </div>
+</div>

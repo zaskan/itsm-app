@@ -1,0 +1,173 @@
+<div class="incident-detail-page">
+  <div class="inc-form-panel">
+    {% if incident.status == 'open' %}
+    <form id="inc-update-form" method="post" action="/incidents/{{ incident.public_id }}/severity" class="inc-main-form">
+    {% else %}
+    <div class="inc-main-form">
+    {% endif %}
+      <div class="inc-form-grid">
+        <div class="inc-field">
+          <label for="inc-number">Number</label>
+          <input id="inc-number" type="text" readonly value="{{ incident.display_number }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="inc-opened">Opened</label>
+          <input id="inc-opened" type="text" readonly value="{{ incident.opened_display }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="inc-caller">Caller</label>
+          <input id="inc-caller" type="text" readonly value="{{ incident.caller_username }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="inc-closed">Closed</label>
+          <input id="inc-closed" type="text" readonly value="{{ incident.closed_display }}" class="inc-input inc-readonly" placeholder="" />
+        </div>
+        <div class="inc-field">
+          <label for="inc-watch">Watch list</label>
+          <input id="inc-watch" type="text" readonly disabled placeholder="" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="inc-urgency">Urgency</label>
+          {% if incident.status == 'open' %}
+          <select id="inc-urgency" name="severity" class="inc-input">
+            {% for s in ['low','medium','high','critical'] %}
+            <option value="{{ s }}" {% if incident.severity == s %}selected{% endif %}>{{ urgency_labels[s] }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input id="inc-urgency" type="text" readonly value="{{ incident.urgency_label }}" class="inc-input inc-readonly" />
+          {% endif %}
+        </div>
+        <div class="inc-field inc-field-wide">
+          <label for="inc-state">State</label>
+          <input id="inc-state" type="text" readonly value="{{ incident.state_label }}" class="inc-input inc-readonly" />
+        </div>
+      </div>
+
+      <div class="inc-field inc-field-full">
+        <label for="inc-short-desc">Short description</label>
+        <input id="inc-short-desc" type="text" readonly value="{{ incident.title }}" class="inc-input inc-readonly" />
+      </div>
+
+      {% if incident.description %}
+      <div class="inc-field inc-field-full">
+        <label for="inc-description">Description</label>
+        <textarea id="inc-description" readonly rows="3" class="inc-input inc-readonly inc-textarea">{{ incident.description }}</textarea>
+      </div>
+      {% endif %}
+
+    {% if incident.status == 'open' %}
+    </form>
+    {% else %}
+    </div>
+    {% endif %}
+
+      {% if incident.linked_asset or incident.status == 'open' %}
+      <div class="inc-field inc-field-full inc-asset-row">
+        <label for="inc-asset">Configuration item</label>
+        {% if incident.status == 'open' %}
+        <form method="post" action="/incidents/{{ incident.public_id }}/asset" class="inc-asset-form">
+          <select id="inc-asset" name="inventory_asset_id" class="inc-input">
+            <option value="">— None —</option>
+            {% for it in inventory_items %}
+            <option value="{{ it.id }}" {% if incident.inventory_asset_id == it.id %}selected{% endif %}>
+              {{ it.name }}{% if it.asset_type_name %} ({{ it.asset_type_name }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="inc-secondary-btn">Update CI</button>
+        </form>
+        {% else %}
+        <input type="text" readonly class="inc-input inc-readonly"
+          value="{% if incident.linked_asset %}{{ incident.linked_asset.name }}{% if incident.linked_asset.asset_type_name %} ({{ incident.linked_asset.asset_type_name }}){% endif %}{% else %}—{% endif %}" />
+        {% endif %}
+      </div>
+      {% endif %}
+
+    {% if incident.status == 'closed' %}
+    <div class="inc-sla-panel">
+      <h3>Resolution &amp; SLA</h3>
+      {% if incident.resolution_duration_label %}
+      <p>Resolution time: <strong>{{ incident.resolution_duration_label }}</strong></p>
+      <p>SLA target ({{ incident.severity | capitalize }}): {{ incident.sla_target_label }}</p>
+      {% if incident.sla_compliant is sameas true %}
+      <span class="inc-badge inc-badge-ok">Within SLA</span>
+      {% elif incident.sla_compliant is sameas false %}
+      <span class="inc-badge inc-badge-bad">SLA breached</span>
+      {% endif %}
+      {% if incident.resolution_kb_article %}
+      <p class="inc-kb-link">Resolution KB: <strong>{{ incident.resolution_kb_article.title }}</strong></p>
+      {% endif %}
+      {% else %}
+      <p class="inc-muted">Resolution timing could not be computed.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="inc-related-divider">
+    <button type="button" class="inc-related-btn" disabled>Related Search Results ›</button>
+  </div>
+
+  {% if incident.status == 'open' %}
+  <form method="post" action="/incidents/{{ incident.public_id }}/comment" class="inc-comment-form">
+    <label for="inc-comment-body">Comments <span class="inc-label-hint">(Customer visible)</span></label>
+    <textarea id="inc-comment-body" name="body" rows="4" required class="inc-input inc-comment-textarea"
+      placeholder=""></textarea>
+    <div class="inc-comment-actions">
+      <button type="submit" class="inc-post-btn">Post</button>
+    </div>
+  </form>
+
+  <form id="inc-resolve-form" method="post" action="/incidents/{{ incident.public_id }}/close" class="inc-resolve-form hidden">
+    <select name="kb_article_id" aria-label="Resolution KB article">
+      <option value="">— None —</option>
+      {% for a in kb_articles %}
+      <option value="{{ a.id }}">{{ a.title }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  {% endif %}
+
+  <section class="inc-activities" aria-labelledby="inc-activities-heading">
+    <h2 id="inc-activities-heading">Activities: {{ incident.activities | length }}</h2>
+    <div class="inc-activity-list">
+      {% for activity in incident.activities %}
+      <article class="inc-activity-card">
+        <div class="inc-activity-avatar" aria-hidden="true">{{ activity.actor_username[0] | upper }}</div>
+        <div class="inc-activity-body">
+          <div class="inc-activity-meta">
+            <span class="inc-activity-user">{{ activity.actor_username }}</span>
+            <time class="inc-activity-time" datetime="{{ activity.created_at }}">{{ activity.created_at_display }}</time>
+          </div>
+          {% for line in activity.lines %}
+          <p class="inc-activity-line">{{ line }}</p>
+          {% endfor %}
+        </div>
+      </article>
+      {% else %}
+      <p class="inc-muted">No activity yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="inc-footer-bar">
+    <div class="inc-toolbar inc-footer-toolbar">
+      {% if incident.status == 'open' %}
+      <button type="submit" class="inc-tool-btn inc-tool-primary" form="inc-update-form">Update</button>
+      <button type="submit" class="inc-tool-btn" form="inc-resolve-form"
+        onclick="return confirm('Resolve this incident?');">Resolve</button>
+      {% endif %}
+      <button type="submit" class="inc-tool-btn inc-tool-danger" form="inc-delete-form"
+        onclick="return confirm('Permanently delete this ticket and all comments?');">Delete</button>
+      <button type="button" class="inc-tool-btn" disabled>Responses</button>
+    </div>
+    <div class="inc-related-links">
+      <span class="inc-related-links-label">Related Links</span>
+      <a href="/incidents" class="inc-related-link">Back to list</a>
+      {% if incident.status == 'closed' and incident.resolution_kb_article %}
+      <a href="/kb/{{ incident.resolution_kb_article.id }}" class="inc-related-link">View resolution article</a>
+      {% endif %}
+    </div>
+  </div>
+</div>

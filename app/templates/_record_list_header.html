@@ -1,0 +1,17 @@
+{% macro render(record_label, display_number, back_href, back_label, toolbar_label=none) %}
+<div class="nx-list-header nx-record-list-header">
+  <div class="nx-record-header-left min-w-0">
+    <a href="{{ back_href }}" class="nx-record-back-btn" aria-label="{{ back_label }}">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+    </a>
+    <h1 class="nx-record-title">
+      {{ record_label }}
+      <span class="nx-record-number">{{ display_number }}</span>
+      <span class="nx-record-view">View: Self Service</span>
+    </h1>
+  </div>
+  <div class="inc-toolbar" role="toolbar"{% if toolbar_label %} aria-label="{{ toolbar_label }}"{% endif %}>
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}

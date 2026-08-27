@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_record_list_header.html" import render as record_list_header %}
+{% set active_nav = 'requests' %}
+{% block title %}Request {{ service_request.display_number }} — {{ app_title }}{% endblock %}
+{% block list_header %}
+{% call record_list_header("Request", service_request.display_number, "/requests", "Back to requests", "Request actions") %}
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Discuss</button>
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Follow</button>
+  {% if service_request.status == 'draft' and service_request.ritms and not service_request.is_simple_request %}
+  <button type="submit" class="inc-tool-btn inc-tool-primary" form="req-submit-form"
+    onclick="return confirm('Submit this request? Changes will be created automatically.');">Submit</button>
+  {% endif %}
+  {% if service_request.is_simple_request and service_request.status == 'draft' %}
+  <button type="submit" class="inc-tool-btn" form="req-close-form"
+    onclick="return confirm('Close this request?');">Close</button>
+  {% endif %}
+  {% if service_request.status not in ('closed','cancelled') %}
+  <button type="submit" class="inc-tool-btn inc-tool-danger" form="req-cancel-form"
+    onclick="return confirm('Cancel this request?');">Cancel</button>
+  {% endif %}
+  <button type="button" class="inc-tool-btn" disabled title="Coming soon">Responses</button>
+{% endcall %}
+{% endblock %}
+
+{% block content %}
+{% include "_request_detail_body.html" %}
+{% endblock %}

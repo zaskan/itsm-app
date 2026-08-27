@@ -1,0 +1,207 @@
+<div class="incident-detail-page">
+  <div class="inc-form-panel">
+    <div class="inc-main-form">
+      <div class="inc-form-grid">
+        <div class="inc-field">
+          <label for="req-number">Number</label>
+          <input id="req-number" type="text" readonly value="{{ service_request.display_number }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="req-opened">Opened</label>
+          <input id="req-opened" type="text" readonly value="{{ service_request.opened_display }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="req-requested-for">Requested for</label>
+          <input id="req-requested-for" type="text" readonly value="{{ service_request.requester_username }}" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="req-submitted">Submitted</label>
+          <input id="req-submitted" type="text" readonly value="{{ service_request.submitted_display }}" class="inc-input inc-readonly" placeholder="" />
+        </div>
+        <div class="inc-field">
+          <label for="req-watch">Watch list</label>
+          <input id="req-watch" type="text" readonly disabled placeholder="" class="inc-input inc-readonly" />
+        </div>
+        <div class="inc-field">
+          <label for="req-closed">Closed</label>
+          <input id="req-closed" type="text" readonly value="{{ service_request.closed_display }}" class="inc-input inc-readonly" placeholder="" />
+        </div>
+        <div class="inc-field inc-field-wide">
+          <label for="req-state">State</label>
+          <input id="req-state" type="text" readonly value="{{ service_request.state_label }}" class="inc-input inc-readonly" />
+        </div>
+      </div>
+
+      <div class="inc-field inc-field-full">
+        <label for="req-short-desc">Short description</label>
+        <input id="req-short-desc" type="text" readonly value="{{ service_request.name or service_request.public_id }}" class="inc-input inc-readonly" />
+      </div>
+
+      <div class="inc-field inc-field-full">
+        <label for="req-description">Description</label>
+        <textarea id="req-description" readonly rows="3" class="inc-input inc-readonly inc-textarea">{{ service_request.description or 'No description provided.' }}</textarea>
+      </div>
+
+      {% if service_request.resolution_kb_article %}
+      <div class="inc-field inc-field-full">
+        <label>Knowledge article</label>
+        <input type="text" readonly class="inc-input inc-readonly" value="{{ service_request.resolution_kb_article.title }}" />
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="inc-field inc-field-full inc-asset-row" style="margin-top:1rem;padding-top:1rem;border-top:1px solid #e5e7eb;">
+      <label>Requested items (RITM)</label>
+      {% if service_request.ritms %}
+      <div class="inc-ritm-list">
+        {% for r in service_request.ritms %}
+        <article class="inc-ritm-card">
+          <p class="inc-ritm-id">{{ r.public_id }}</p>
+          <p class="inc-ritm-title">{{ r.item_type or r.request_template_name or r.catalog_item_name or 'Item' }}</p>
+          <p class="inc-ritm-meta">Status: {{ r.status | replace('_',' ') | title }}</p>
+          {% if r.request_template_name %}
+          <p class="inc-ritm-meta">Template: {{ r.request_template_name }}</p>
+          {% endif %}
+          {% if r.specifications %}
+          <dl class="inc-ritm-specs">
+            {% for k, v in r.specifications.items() %}
+            <div><dt>{{ k }}</dt><dd>{{ v }}</dd></div>
+            {% endfor %}
+          </dl>
+          {% endif %}
+          {% if r.change_public_id %}
+          <p class="inc-ritm-meta">Change: <a href="/changes/{{ r.change_public_id }}" class="inc-related-link">{{ r.change_public_id }}</a> ({{ r.change_status | replace('_',' ') | title }})</p>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="inc-muted">No items yet.</p>
+      {% endif %}
+
+      {% if service_request.status == 'draft' and not service_request.is_simple_request %}
+      <form method="post" action="/requests/{{ service_request.public_id }}/ritm" class="inc-ritm-add-form" id="add-ritm-form">
+        <p class="inc-ritm-add-label">Add requested item</p>
+        <select name="catalog_item_id" id="ritm-template-select" class="inc-input" onchange="renderRitmTemplateFields()">
+          <option value="">— Custom item —</option>
+          {% for c in request_templates %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+        <div id="ritm-template-fields" class="inc-ritm-template-fields hidden"></div>
+        <input name="item_type" placeholder="Item type (if custom)" class="inc-input" />
+        <button type="submit" class="inc-secondary-btn">Add RITM</button>
+      </form>
+      {% endif %}
+    </div>
+
+    {% if service_request.is_simple_request and service_request.status == 'draft' %}
+    <form method="post" action="/requests/{{ service_request.public_id }}/resolution-kb" class="inc-kb-assign-form">
+      <label for="req-kb">Knowledge base article</label>
+      <div class="inc-asset-form">
+        <select id="req-kb" name="kb_article_id" class="inc-input">
+          <option value="">— None —</option>
+          {% for a in kb_articles %}
+          <option value="{{ a.id }}" {% if service_request.resolution_kb_article_id == a.id %}selected{% endif %}>{{ a.title }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="inc-secondary-btn">Assign KB</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="inc-related-divider">
+    <button type="button" class="inc-related-btn" disabled>Related Search Results ›</button>
+  </div>
+
+  {% if service_request.is_simple_request and service_request.status == 'draft' %}
+  <form method="post" action="/requests/{{ service_request.public_id }}/comment" class="inc-comment-form">
+    <label for="req-comment-body">Comments <span class="inc-label-hint">(Customer visible)</span></label>
+    <textarea id="req-comment-body" name="body" rows="4" required class="inc-input inc-comment-textarea" placeholder=""></textarea>
+    <div class="inc-comment-actions">
+      <button type="submit" class="inc-post-btn">Post</button>
+    </div>
+  </form>
+  {% endif %}
+
+  <form id="req-submit-form" method="post" action="/requests/{{ service_request.public_id }}/submit" class="hidden"></form>
+  <form id="req-close-form" method="post" action="/requests/{{ service_request.public_id }}/close" class="hidden"></form>
+  <form id="req-cancel-form" method="post" action="/requests/{{ service_request.public_id }}/cancel" class="hidden"></form>
+
+  <section class="inc-activities" aria-labelledby="req-activities-heading">
+    <h2 id="req-activities-heading">Activities: {{ service_request.activities | length }}</h2>
+    <div class="inc-activity-list">
+      {% for activity in service_request.activities %}
+      <article class="inc-activity-card">
+        <div class="inc-activity-avatar" aria-hidden="true">{{ activity.actor_username[0] | upper }}</div>
+        <div class="inc-activity-body">
+          <div class="inc-activity-meta">
+            <span class="inc-activity-user">{{ activity.actor_username }}</span>
+            <time class="inc-activity-time" datetime="{{ activity.created_at }}">{{ activity.created_at_display }}</time>
+          </div>
+          {% for line in activity.lines %}
+          <p class="inc-activity-line">{{ line }}</p>
+          {% endfor %}
+        </div>
+      </article>
+      {% else %}
+      <p class="inc-muted">No activity yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="inc-footer-bar">
+    <div class="inc-toolbar inc-footer-toolbar">
+      {% if service_request.status == 'draft' and service_request.ritms and not service_request.is_simple_request %}
+      <button type="submit" class="inc-tool-btn inc-tool-primary" form="req-submit-form"
+        onclick="return confirm('Submit this request?');">Submit</button>
+      {% endif %}
+      {% if service_request.status not in ('closed','cancelled') %}
+      <button type="submit" class="inc-tool-btn inc-tool-danger" form="req-cancel-form"
+        onclick="return confirm('Cancel this request?');">Cancel</button>
+      {% endif %}
+    </div>
+    <div class="inc-related-links">
+      <span class="inc-related-links-label">Related Links</span>
+      <a href="/requests" class="inc-related-link">Back to list</a>
+    </div>
+  </div>
+</div>
+
+{% if not service_request.is_simple_request %}
+<script>
+(function () {
+  const requestTemplateFields = {{ template_fields | tojson }};
+  function renderField(f) {
+    const req = f.required ? ' required' : '';
+    const label = f.label + (f.required ? ' *' : '');
+    if (f.field_type === 'textarea') {
+      return '<div class="inc-field"><label class="text-sm text-slate-700">' + label + '</label><textarea name="cf_' + f.field_key + '"' + req + ' rows="2" class="inc-input inc-textarea"></textarea></div>';
+    }
+    if (f.field_type === 'boolean') {
+      return '<label class="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" name="cf_' + f.field_key + '" value="1" /> ' + label + '</label>';
+    }
+    if (f.field_type === 'select' && f.options && f.options.length) {
+      const opts = f.options.map(o => '<option value="' + o + '">' + o + '</option>').join('');
+      return '<div class="inc-field"><label class="text-sm text-slate-700">' + label + '</label><select name="cf_' + f.field_key + '"' + req + ' class="inc-input"><option value=""></option>' + opts + '</select></div>';
+    }
+    const inputType = f.field_type === 'number' ? 'number' : (f.field_type === 'date' ? 'date' : 'text');
+    return '<div class="inc-field"><label class="text-sm text-slate-700">' + label + '</label><input type="' + inputType + '" name="cf_' + f.field_key + '"' + req + ' class="inc-input" /></div>';
+  }
+  window.renderRitmTemplateFields = function () {
+    const sel = document.getElementById('ritm-template-select');
+    const box = document.getElementById('ritm-template-fields');
+    if (!sel || !box) return;
+    const fields = requestTemplateFields[sel.value] || [];
+    if (sel.value && fields.length) {
+      box.classList.remove('hidden');
+      box.innerHTML = fields.map(renderField).join('');
+    } else {
+      box.classList.add('hidden');
+      box.innerHTML = '';
+    }
+  };
+})();
+</script>
+{% endif %}
