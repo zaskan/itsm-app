@@ -43,7 +43,7 @@ def embeddings_configured() -> bool:
 
 
 def _embeddings_url() -> str:
-    return f"{_base_url()}/v1/embeddings"
+    return f"{_base_url()}"
 
 
 def _max_input_chars() -> int:
