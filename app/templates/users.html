@@ -4,6 +4,7 @@
 {% block page_heading %}Users{% endblock %}
 
 {% block content %}
+<div class="nx-page-content nx-page-content--narrow">
 <p class="text-slate-600 text-sm mb-4">Create accounts and assign roles. At least one administrator must remain. Each user gets an MCP token for agent access.</p>
 
 {% set err = request.query_params.get('error') %}
@@ -20,14 +21,14 @@
 {% endif %}
 
 {% if new_mcp_token %}
-<div class="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl max-w-3xl">
+<div class="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl w-full">
   <p class="text-sm font-semibold text-amber-900">MCP token for {{ token_user or 'user' }}</p>
   <p class="text-xs text-amber-800 mt-1 mb-2">Copy now — it will not be shown again. Use as <code class="text-xs">X-ITSM-MCP-Token</code> or Bearer.</p>
   <code class="block text-sm break-all bg-white border border-amber-200 rounded-lg px-3 py-2 select-all">{{ new_mcp_token }}</code>
 </div>
 {% endif %}
 
-<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 max-w-xl">
+<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 w-full">
   <h3 class="text-sm font-semibold text-slate-800 mb-3">Add user</h3>
   <form method="post" action="/users/new" class="space-y-3">
     <div>
@@ -49,7 +50,7 @@
   </form>
 </div>
 
-<div class="space-y-6 max-w-3xl">
+<div class="space-y-6">
   {% for u in users %}
   <div class="bg-white rounded-xl border border-slate-200 p-4">
     <form method="post" action="/users/{{ u.id }}/edit" class="grid sm:grid-cols-12 gap-3 items-end">
@@ -91,5 +92,6 @@
     </div>
   </div>
   {% endfor %}
+</div>
 </div>
 {% endblock %}

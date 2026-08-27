@@ -54,6 +54,7 @@ _SCHEMA_SQL = """
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
+                source_path TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -276,13 +277,28 @@ def get_connection() -> sqlite3.Connection:
     """Thread-local SQLite connection."""
     path = db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    if not getattr(_local, "conn", None):
-        _local.conn = sqlite3.connect(str(path), check_same_thread=False)
-        _local.conn.row_factory = sqlite3.Row
-        _local.conn.execute("PRAGMA foreign_keys = ON")
-        _local.conn.executescript(_SCHEMA_SQL)
-        _local.conn.commit()
+    path_str = str(path)
+    conn = getattr(_local, "conn", None)
+    if conn is not None and getattr(_local, "conn_path", None) == path_str:
+        return conn
+    if conn is not None:
+        conn.close()
+    _local.conn = sqlite3.connect(path_str, check_same_thread=False)
+    _local.conn_path = path_str
+    _local.conn.row_factory = sqlite3.Row
+    _local.conn.execute("PRAGMA foreign_keys = ON")
+    _local.conn.executescript(_SCHEMA_SQL)
+    _local.conn.commit()
     return _local.conn
+
+
+def reset_connections() -> None:
+    """Close thread-local connections (useful when ``ITSM_DATABASE`` changes)."""
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        conn.close()
+    _local.conn = None
+    _local.conn_path = None
 
 
 @contextmanager
@@ -305,9 +321,14 @@ def init_db() -> None:
 
     _migrate_legacy_schema()
     _bootstrap_env_admin()
+    from app.services import kb_repo as kb_repo_svc
+    from app.services import seed_content as seed_content_svc
     from app.services import settings as settings_svc
 
     settings_svc.seed_defaults()
+    kb_repo_svc.apply_env_defaults()
+    seed_content_svc.seed_default_content_if_needed()
+    kb_repo_svc.sync_if_configured()
 
 
 def _table_columns(cur: sqlite3.Cursor, table: str) -> set[str]:
@@ -393,6 +414,7 @@ def _migrate_legacy_schema() -> None:
         _migrate_assigned_user_fields(cur)
         _migrate_change_tasks_standalone(cur)
         _migrate_users_mcp_token(cur)
+        _migrate_kb_articles_source_path(cur)
 
         cur.execute("DROP TABLE IF EXISTS ci_relationships")
         cur.execute("DROP TABLE IF EXISTS configuration_items")
@@ -621,7 +643,29 @@ def _migrate_assigned_user_fields(cur: sqlite3.Cursor) -> None:
 def _migrate_users_mcp_token(cur: sqlite3.Cursor) -> None:
     cols = _table_columns(cur, "users")
     if cols and "mcp_token_hash" not in cols:
-        cur.execute("ALTER TABLE users ADD COLUMN mcp_token_hash TEXT UNIQUE")
+        cur.execute("ALTER TABLE users ADD COLUMN mcp_token_hash TEXT")
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_mcp_token_hash "
+            "ON users(mcp_token_hash) WHERE mcp_token_hash IS NOT NULL"
+        )
+
+
+def _ensure_kb_articles_source_path_index(cur: sqlite3.Cursor) -> None:
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_articles_source_path
+        ON kb_articles(source_path) WHERE source_path IS NOT NULL
+        """
+    )
+
+
+def _migrate_kb_articles_source_path(cur: sqlite3.Cursor) -> None:
+    cols = _table_columns(cur, "kb_articles")
+    if not cols:
+        return
+    if "source_path" not in cols:
+        cur.execute("ALTER TABLE kb_articles ADD COLUMN source_path TEXT")
+    _ensure_kb_articles_source_path_index(cur)
 
 
 def _migrate_change_tasks_standalone(cur: sqlite3.Cursor) -> None:

@@ -42,7 +42,8 @@ def test_purge_data_wrong_confirm_leaves_data() -> None:
         )
         assert r.status_code == 400
 
-        assert settings_svc.get_app_title() == "Custom Title"
+        r_title = client.get("/api/v1/settings/app", auth=("admin", "admin"))
+        assert r_title.json()["app_title"] == "Custom Title"
         users = client.get("/api/v1/users", auth=("admin", "admin")).json()
         assert len(users) == 2
         incidents = client.get("/api/v1/incidents", auth=("admin", "admin")).json()
@@ -89,8 +90,11 @@ def test_purge_data_success_keeps_admin_only() -> None:
 
         assert settings_svc.get_app_title() == settings_svc.DEFAULT_APP_TITLE
         users = client.get("/api/v1/users", auth=("admin", "admin")).json()
-        assert len(users) == 1
-        assert users[0]["username"] == "admin"
-        assert users[0]["role"] == "admin"
-        assert client.get("/api/v1/incidents", auth=("admin", "admin")).json() == []
+        assert len(users) == 2
+        assert {u["username"] for u in users} == {"admin", "aiops"}
+        incidents = client.get("/api/v1/incidents", auth=("admin", "admin")).json()
+        assert len(incidents) == 0
+        assert len(client.get("/api/v1/asset-types", auth=("admin", "admin")).json()) == 2
+        assert len(client.get("/api/v1/task-templates", auth=("admin", "admin")).json()) == 10
+        assert len(client.get("/api/v1/request-templates", auth=("admin", "admin")).json()) == 3
         assert client.get("/api/v1/settings/webhooks", auth=("admin", "admin")).json() == []

@@ -68,7 +68,7 @@ class WebhookPatch(BaseModel):
 
 
 class AppSettings(BaseModel):
-    app_title: str = Field(..., min_length=1, max_length=200)
+    app_title: str = Field(..., max_length=200)
 
 
 class BrandingOut(BaseModel):
@@ -78,12 +78,20 @@ class BrandingOut(BaseModel):
     sidebar_background: str
     sidebar_text: str
     presets_supported: list[str] = Field(
-        default_factory=lambda: ["navy", "slate", "forest", "wine", "bronze", "light"]
+        default_factory=lambda: [
+            "polaris",
+            "navy",
+            "slate",
+            "forest",
+            "wine",
+            "bronze",
+            "light",
+        ]
     )
 
 
 class BrandingPatch(BaseModel):
-    app_title: str | None = Field(None, min_length=1, max_length=200)
+    app_title: str | None = Field(None, max_length=200)
     logo_mode: Literal["builtin", "custom"] | None = None
     sidebar_background: str | None = None
     sidebar_text: str | None = None
@@ -96,6 +104,34 @@ class PurgeDataBody(BaseModel):
 
 class PurgeDataOut(BaseModel):
     deleted: dict[str, int] = Field(default_factory=dict)
+
+
+class KBRepoSettingsOut(BaseModel):
+    repo_url: str = ""
+    repo_root: str = ""
+    repo_subpath: str = ""
+    ignore_ssl: bool = False
+    resolved_path: str = ""
+    source: str = "local"
+    configured: bool = False
+    path_exists: bool = False
+    last_sync: str = ""
+
+
+class KBRepoSettingsPatch(BaseModel):
+    repo_url: str | None = Field(None, max_length=4096)
+    repo_root: str | None = Field(None, max_length=4096)
+    repo_subpath: str | None = Field(None, max_length=4096)
+    ignore_ssl: bool | None = None
+
+
+class KBRepoSyncOut(BaseModel):
+    created: int = 0
+    updated: int = 0
+    deleted: int = 0
+    skipped: int = 0
+    errors: list[str] = Field(default_factory=list)
+    last_sync: str = ""
 
 
 class UserCreate(BaseModel):

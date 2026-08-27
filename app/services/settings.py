@@ -5,7 +5,7 @@ from __future__ import annotations
 from app import db
 
 KEY_APP_TITLE = "app_title"
-DEFAULT_APP_TITLE = "ITSM Demo"
+DEFAULT_APP_TITLE = ""
 
 
 def get_setting(key: str, default: str = "") -> str:
@@ -33,7 +33,7 @@ def get_app_title() -> str:
 
 
 def set_app_title(title: str) -> None:
-    set_setting(KEY_APP_TITLE, title.strip() or DEFAULT_APP_TITLE)
+    set_setting(KEY_APP_TITLE, title.strip())
 
 
 def seed_defaults() -> None:
@@ -46,6 +46,13 @@ def seed_defaults() -> None:
             """,
             (KEY_APP_TITLE, DEFAULT_APP_TITLE),
         )
+        cur.execute("SELECT value FROM app_settings WHERE key = ?", (KEY_APP_TITLE,))
+        row = cur.fetchone()
+        if row and (row[0] or "").strip() == "ITSM Demo":
+            cur.execute(
+                "UPDATE app_settings SET value = ? WHERE key = ?",
+                ("", KEY_APP_TITLE),
+            )
     from app.services.branding import seed_branding_defaults
 
     seed_branding_defaults()

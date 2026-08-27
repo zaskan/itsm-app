@@ -18,6 +18,7 @@ from app.services import custom_fields as cf_svc
 from app.services import incidents as inc_svc
 from app.services import inventory as inv_svc
 from app.services import kb as kb_svc
+from app.services import kb_repo as kb_repo_svc
 from app.services import branding as branding_svc
 from app.services import data_purge as data_purge_svc
 from app.services import request_templates as rtpl_svc
@@ -130,6 +131,43 @@ def api_purge_data(
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     return {"deleted": deleted}
+
+
+@router.get("/settings/kb-repo", response_model=schemas.KBRepoSettingsOut)
+def api_get_kb_repo_settings(
+    _user: Annotated[dict, Depends(get_current_user_basic_admin)],
+) -> dict:
+    return kb_repo_svc.kb_repo_settings_dict()
+
+
+@router.patch("/settings/kb-repo", response_model=schemas.KBRepoSettingsOut)
+def api_patch_kb_repo_settings(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+    body: schemas.KBRepoSettingsPatch,
+) -> dict:
+    del user
+    url = body.repo_url if body.repo_url is not None else kb_repo_svc.get_kb_repo_url()
+    root = body.repo_root if body.repo_root is not None else kb_repo_svc.get_kb_repo_root()
+    subpath = body.repo_subpath if body.repo_subpath is not None else kb_repo_svc.get_kb_repo_subpath()
+    ignore_ssl = (
+        body.ignore_ssl
+        if body.ignore_ssl is not None
+        else kb_repo_svc.get_kb_repo_ignore_ssl()
+    )
+    kb_repo_svc.set_kb_repo_config(url=url, root=root, subpath=subpath, ignore_ssl=ignore_ssl)
+    return kb_repo_svc.kb_repo_settings_dict()
+
+
+@router.post("/settings/kb-repo/sync", response_model=schemas.KBRepoSyncOut)
+def api_sync_kb_repo(
+    user: Annotated[dict, Depends(get_current_user_basic_admin)],
+) -> dict:
+    del user
+    stats = kb_repo_svc.sync_from_repo()
+    return {
+        **stats,
+        "last_sync": kb_repo_svc.get_kb_repo_last_sync(),
+    }
 
 
 @router.get("/incidents", response_model=list[schemas.IncidentOut])

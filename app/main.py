@@ -19,6 +19,7 @@ from starlette.responses import Response
 from app import db
 from app.mcp_setup import build_mcp, mcp_mount_app
 from app.routes import api_v1, ui
+from app.services.branding import upload_root
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -164,6 +165,11 @@ app.add_middleware(SessionMiddleware, secret_key=_session_secret, session_cookie
 
 app.include_router(ui.router)
 app.include_router(api_v1.router)
+
+# Mount uploads first so /static/uploads is not swallowed by /static.
+_uploads_dir = upload_root()
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(static_dir):

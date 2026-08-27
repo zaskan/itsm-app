@@ -398,6 +398,96 @@ def get_incident_detail(incident_id: str | int) -> dict[str, Any] | None:
         return out
 
 
+URGENCY_LABELS: dict[str, str] = {
+    "critical": "1 - Critical",
+    "high": "2 - High",
+    "medium": "3 - Moderate",
+    "low": "4 - Low",
+}
+
+_STATE_LABELS: dict[str, str] = {
+    "open": "New",
+    "closed": "Resolved",
+}
+
+
+def _format_sn_datetime(iso: str | None) -> str:
+    if not iso:
+        return ""
+    try:
+        normalized = iso.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return iso
+
+
+def _activity_lines_for_event(event: dict[str, Any]) -> list[str]:
+    et = event.get("event_type") or ""
+    payload = event.get("payload") or {}
+    if et == "created":
+        lines = []
+        sev = payload.get("severity")
+        if sev:
+            lines.append(f"Urgency: {URGENCY_LABELS.get(sev, sev)}")
+        title = payload.get("title")
+        if title:
+            lines.append(f"Short description: {title}")
+        return lines or ["Incident created"]
+    if et == "severity_changed":
+        old = URGENCY_LABELS.get(payload.get("from", ""), payload.get("from", ""))
+        new = URGENCY_LABELS.get(payload.get("to", ""), payload.get("to", ""))
+        return [f"Urgency: {new} was {old}"]
+    if et == "comment_added":
+        preview = (payload.get("comment_preview") or "").strip()
+        return [preview] if preview else ["Comment added"]
+    if et == "closed":
+        return ["State: Resolved was New"]
+    if et == "asset_linked":
+        return ["Configuration item updated"]
+    return [et.replace("_", " ").title()]
+
+
+def present_incident(detail: dict[str, Any]) -> dict[str, Any]:
+    """Enrich incident detail for ServiceNow-style UI."""
+    caller = "—"
+    for event in detail.get("events", []):
+        if event.get("event_type") == "created":
+            caller = event.get("actor_username") or "—"
+            break
+
+    activities: list[dict[str, Any]] = []
+    for event in reversed(detail.get("events", [])):
+        activities.append(
+            {
+                "actor_username": event.get("actor_username") or "System",
+                "created_at": event.get("created_at"),
+                "created_at_display": _format_sn_datetime(event.get("created_at")),
+                "lines": _activity_lines_for_event(event),
+            }
+        )
+
+    opened_at = detail.get("created_at")
+    for event in detail.get("events", []):
+        if event.get("event_type") == "created":
+            opened_at = event.get("created_at")
+            break
+
+    iid = int(detail["id"])
+    return {
+        **detail,
+        "display_number": f"INC{iid:07d}",
+        "caller_username": caller,
+        "urgency_label": URGENCY_LABELS.get(detail.get("severity", ""), detail.get("severity", "")),
+        "state_label": _STATE_LABELS.get(detail.get("status", ""), detail.get("status", "")),
+        "opened_display": _format_sn_datetime(opened_at),
+        "closed_display": _format_sn_datetime(detail.get("closed_at")),
+        "activities": activities,
+    }
+
+
 def delete_incident(incident_ref: str | int) -> bool:
     with db.cursor() as cur:
         inc = _get_incident_row(cur, incident_ref)

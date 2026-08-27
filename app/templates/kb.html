@@ -1,78 +1,90 @@
 {% extends "base.html" %}
 {% set active_nav = 'kb' %}
-{% block title %}Knowledge Base — {{ app_title }}{% endblock %}
-{% block page_heading %}Knowledge Base{% endblock %}
+{% block title %}Knowledge Search — {{ app_title }}{% endblock %}
+{% block page_heading %}Knowledge Search{% endblock %}
 
 {% block header_actions %}
 <button type="button" onclick="document.getElementById('kb-new').classList.remove('hidden')"
-  class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-hover">+ New article</button>
+  class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover">New article</button>
 {% endblock %}
 
 {% block content %}
-<style>
-  .kb-markdown { font-size: 0.875rem; line-height: 1.625; color: #475569; }
-  .kb-markdown > * + * { margin-top: 0.75rem; }
-  .kb-markdown h1 { font-size: 1.25rem; font-weight: 600; color: #0f172a; }
-  .kb-markdown h2 { font-size: 1.125rem; font-weight: 600; color: #0f172a; }
-  .kb-markdown h3, .kb-markdown h4 { font-size: 1rem; font-weight: 600; color: #1e293b; }
-  .kb-markdown ul, .kb-markdown ol { padding-left: 1.5rem; }
-  .kb-markdown ul { list-style-type: disc; }
-  .kb-markdown ol { list-style-type: decimal; }
-  .kb-markdown li + li { margin-top: 0.25rem; }
-  .kb-markdown a { color: #2563eb; text-decoration: underline; }
-  .kb-markdown a:hover { color: #1d4ed8; }
-  .kb-markdown blockquote { border-left: 3px solid #cbd5e1; padding-left: 1rem; color: #64748b; }
-  .kb-markdown pre { background: #f1f5f9; border-radius: 0.5rem; padding: 0.75rem 1rem; overflow-x: auto; }
-  .kb-markdown code { font-family: ui-monospace, monospace; font-size: 0.8125rem; }
-  .kb-markdown :not(pre) > code { background: #f1f5f9; padding: 0.125rem 0.375rem; border-radius: 0.25rem; }
-  .kb-markdown table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
-  .kb-markdown th, .kb-markdown td { border: 1px solid #e2e8f0; padding: 0.375rem 0.625rem; text-align: left; }
-  .kb-markdown th { background: #f8fafc; font-weight: 600; }
-  .kb-title[data-kb-toggle] { cursor: pointer; }
-  .kb-title[data-kb-toggle]:hover { color: #2563eb; }
-</style>
+<nav class="kb-crumb" aria-label="Breadcrumb">
+  <a href="/incidents">Home</a>
+  <span aria-hidden="true">›</span>
+  <span>Knowledge Search</span>
+</nav>
 
-<p class="text-slate-600 text-sm mb-4">Articles are stored for documentation and can be consumed by agents (REST and MCP) for RAG-style workflows.</p>
-
-<form method="get" class="mb-6 flex gap-2 max-w-md">
-  <input type="search" name="q" value="{{ q }}" placeholder="Search title or body…" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-  <button type="submit" class="rounded-lg bg-slate-700 text-white px-4 py-2 text-sm">Search</button>
+<form method="get" action="/kb" class="kb-search-form" role="search">
+  {% if sort != 'newest' %}<input type="hidden" name="sort" value="{{ sort }}" />{% endif %}
+  {% if source != 'all' %}<input type="hidden" name="source" value="{{ source }}" />{% endif %}
+  <input type="search" name="q" value="{{ q }}" placeholder="Search" aria-label="Search knowledge" />
+  <button type="submit" aria-label="Search">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+  </button>
 </form>
 
-<div class="space-y-3">
-  {% for a in articles %}
-  <div class="kb-article bg-white rounded-lg border border-slate-200 p-4" data-kb-id="{{ a.id }}">
-    <h3 class="kb-title font-medium text-slate-900 min-w-0" data-kb-toggle>{{ a.title }}</h3>
-    <div class="kb-panel hidden mt-4 pt-4 border-t border-slate-100" data-kb-panel>
-      <div class="kb-markdown" data-kb-view-mode>{{ a.description | markdown | safe }}</div>
-      <p class="text-xs text-slate-400 mt-3" data-kb-view-mode>Updated {{ a.updated_at }}</p>
-      <form class="hidden space-y-4" data-kb-edit-mode method="post" action="/kb/{{ a.id }}/edit">
-        {% if q %}<input type="hidden" name="q" value="{{ q }}" />{% endif %}
-        <div>
-          <label class="text-sm font-medium">Title</label>
-          <input name="title" required value="{{ a.title }}"
-            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label class="text-sm font-medium">Description <span class="text-slate-400 font-normal">(Markdown supported)</span></label>
-          <textarea name="description" rows="8"
-            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono">{{ a.description }}</textarea>
-        </div>
-        <div class="flex gap-2">
-          <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm">Save</button>
-          <button type="button" data-kb-cancel class="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
-        </div>
-      </form>
-      <div class="flex gap-4 mt-3" data-kb-actions>
-        <button type="button" data-kb-edit class="text-sm text-primary hover:underline">Edit</button>
-        <form method="post" action="/kb/{{ a.id }}/delete" onsubmit="return confirm('Delete this article?');">
-          <button type="submit" class="text-sm text-red-600 hover:underline">Delete</button>
-        </form>
-      </div>
+<div class="kb-toolbar">
+  <div class="relative">
+    <button type="button" id="kb-filter-btn" class="kb-filter-btn" aria-expanded="false" aria-controls="kb-filter-panel">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c.51 0 .98.3 1.2.77L18.5 14H5.5l5.3-10.23A1.35 1.35 0 0112 3zM6 16h12v2a2 2 0 01-2 2H8a2 2 0 01-2-2v-2z" /></svg>
+      Filters
+    </button>
+    <div id="kb-filter-panel" class="kb-filter-panel hidden">
+      <a href="/kb?sort={{ sort }}{% if q %}&amp;q={{ q | urlencode }}{% endif %}" class="{% if source == 'all' %}is-on{% endif %}">All articles</a>
+      <a href="/kb?source=repo&amp;sort={{ sort }}{% if q %}&amp;q={{ q | urlencode }}{% endif %}" class="{% if source == 'repo' %}is-on{% endif %}">From repository</a>
+      <a href="/kb?source=manual&amp;sort={{ sort }}{% if q %}&amp;q={{ q | urlencode }}{% endif %}" class="{% if source == 'manual' %}is-on{% endif %}">Created in UI</a>
     </div>
   </div>
+</div>
+
+<div class="kb-results">
+  <div class="kb-results-head">
+    <div class="kb-count">{{ articles | length }} Result{% if articles | length != 1 %}s{% endif %}</div>
+    <div class="kb-sort">
+      Sort by
+      <span class="kb-sort-sep">|</span>
+      <a href="/kb?sort=newest{% if source != 'all' %}&amp;source={{ source }}{% endif %}{% if q %}&amp;q={{ q | urlencode }}{% endif %}" class="{% if sort == 'newest' %}is-on{% endif %}">Newest</a>
+      <a href="/kb?sort=alpha{% if source != 'all' %}&amp;source={{ source }}{% endif %}{% if q %}&amp;q={{ q | urlencode }}{% endif %}" class="{% if sort == 'alpha' %}is-on{% endif %}">Alphabetical</a>
+    </div>
+  </div>
+  {% if source != 'all' %}
+  <div class="kb-chips">
+    <span class="kb-chip">
+      {% if source == 'repo' %}From repository{% else %}Created in UI{% endif %}
+      <a href="/kb?sort={{ sort }}{% if q %}&amp;q={{ q | urlencode }}{% endif %}" aria-label="Clear filter">×</a>
+    </span>
+    <a class="kb-clear" href="/kb?sort={{ sort }}{% if q %}&amp;q={{ q | urlencode }}{% endif %}">Clear All</a>
+  </div>
+  {% endif %}
+
+  {% for a in articles %}
+  <article class="kb-result">
+    <div class="kb-result-icon" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+      </svg>
+    </div>
+    <div class="kb-result-body">
+      <a class="kb-result-title" href="/kb/{{ a.id }}">{{ a.title }}</a>
+      <div class="kb-result-cat">{{ a.category }}</div>
+      {% if a.snippet %}
+      <p class="kb-result-snippet">{{ a.snippet }}</p>
+      {% endif %}
+      <div class="kb-result-meta">
+        <span>ITSM</span>
+        <span>•</span>
+        <span>{{ a.relative_updated }}</span>
+        <span class="kb-stars" aria-label="Not rated">
+          {% for _ in range(5) %}
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>
+          {% endfor %}
+        </span>
+      </div>
+    </div>
+  </article>
   {% else %}
-  <p class="text-slate-500">No articles yet. Create one to seed your knowledge base.</p>
+  <p class="kb-empty">No articles match your search.</p>
   {% endfor %}
 </div>
 
@@ -93,93 +105,21 @@
     </form>
   </div>
 </div>
-
 <script>
-(function () {
-  function showViewMode(article) {
-    article.querySelectorAll('[data-kb-view-mode]').forEach(function (el) {
-      el.classList.remove('hidden');
+  (function () {
+    var btn = document.getElementById('kb-filter-btn');
+    var panel = document.getElementById('kb-filter-panel');
+    if (!btn || !panel) return;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = panel.classList.contains('hidden');
+      panel.classList.toggle('hidden', !open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
-    var editForm = article.querySelector('[data-kb-edit-mode]');
-    if (editForm) editForm.classList.add('hidden');
-    var actions = article.querySelector('[data-kb-actions]');
-    if (actions) actions.classList.remove('hidden');
-  }
-
-  function showEditMode(article) {
-    article.querySelectorAll('[data-kb-view-mode]').forEach(function (el) {
-      el.classList.add('hidden');
+    document.addEventListener('click', function () {
+      panel.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
     });
-    var editForm = article.querySelector('[data-kb-edit-mode]');
-    if (editForm) editForm.classList.remove('hidden');
-    var actions = article.querySelector('[data-kb-actions]');
-    if (actions) actions.classList.add('hidden');
-  }
-
-  function expandArticle(article) {
-    var panel = article.querySelector('[data-kb-panel]');
-    if (!panel) return;
-    panel.classList.remove('hidden');
-    showViewMode(article);
-  }
-
-  function collapseArticle(article) {
-    var panel = article.querySelector('[data-kb-panel]');
-    if (!panel) return;
-    panel.classList.add('hidden');
-    showViewMode(article);
-  }
-
-  function isExpanded(article) {
-    var panel = article.querySelector('[data-kb-panel]');
-    return panel && !panel.classList.contains('hidden');
-  }
-
-  function collapseAllArticles() {
-    document.querySelectorAll('.kb-article').forEach(collapseArticle);
-  }
-
-  function toggleArticle(article) {
-    if (isExpanded(article)) {
-      collapseArticle(article);
-    } else {
-      collapseAllArticles();
-      expandArticle(article);
-    }
-  }
-
-  document.querySelectorAll('.kb-article').forEach(function (article) {
-    var toggleTitle = article.querySelector('[data-kb-toggle]');
-    var editBtn = article.querySelector('[data-kb-edit]');
-    var cancelBtn = article.querySelector('[data-kb-cancel]');
-
-    if (toggleTitle) {
-      toggleTitle.addEventListener('click', function () {
-        toggleArticle(article);
-      });
-    }
-
-    if (editBtn) {
-      editBtn.addEventListener('click', function () {
-        showEditMode(article);
-      });
-    }
-
-    if (cancelBtn) {
-      cancelBtn.addEventListener('click', function () {
-        showViewMode(article);
-      });
-    }
-  });
-
-  var openId = {{ open_article_id | default(none) | tojson }};
-  if (openId) {
-    var target = document.querySelector('.kb-article[data-kb-id="' + openId + '"]');
-    if (target) {
-      collapseAllArticles();
-      expandArticle(target);
-    }
-  }
-})();
+  })();
 </script>
 {% endblock %}

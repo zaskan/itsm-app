@@ -64,4 +64,11 @@ def purge_all_data(*, actor_admin_id: int) -> dict[str, int]:
     branding_svc.clear_custom_uploads()
     settings_svc.seed_defaults()
 
+    from app.services import kb_repo as kb_repo_svc
+    from app.services import seed_content as seed_content_svc
+
+    seed_content_svc.reset_seed_flag()
+    seed_content_svc.seed_default_content_if_needed(force=True)
+    kb_repo_svc.sync_if_configured()
+
     return deleted

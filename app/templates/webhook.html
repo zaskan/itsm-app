@@ -4,9 +4,10 @@
 {% block page_heading %}Webhook configuration{% endblock %}
 
 {% block content %}
+<div class="nx-page-content nx-page-content--narrow">
 <p class="text-slate-600 text-sm mb-6">When at least one URL is enabled, the app POSTs JSON to each destination on every incident create, comment, severity change, asset link change, and close. Disable or remove a row to stop delivery there.</p>
 
-<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 max-w-3xl">
+<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 w-full">
   <h3 class="text-sm font-semibold text-slate-800 mb-3">Add webhook</h3>
   <form method="post" action="/webhook-config/add" class="space-y-3">
     <div>
@@ -29,7 +30,7 @@
 </div>
 
 {% if webhooks %}
-<div class="space-y-4 max-w-3xl">
+<div class="space-y-4">
   {% for wh in webhooks %}
   <div class="bg-white rounded-xl border border-slate-200 p-4">
     <div class="flex flex-wrap items-start justify-between gap-3 mb-2">
@@ -57,8 +58,9 @@
   {% endfor %}
 </div>
 {% else %}
-<p class="text-sm text-slate-500 max-w-3xl">No webhooks configured yet.</p>
+<p class="text-sm text-slate-500">No webhooks configured yet.</p>
 {% endif %}
 
-<p class="text-xs text-slate-500 mt-8 max-w-3xl">Each POST body includes <code class="bg-slate-100 px-1 rounded">event</code>, <code class="bg-slate-100 px-1 rounded">timestamp</code>, <code class="bg-slate-100 px-1 rounded">actor</code>, and <code class="bg-slate-100 px-1 rounded">incident</code> (full snapshot with comments).</p>
+<p class="text-xs text-slate-500 mt-8">Each POST body includes <code class="bg-slate-100 px-1 rounded">event</code>, <code class="bg-slate-100 px-1 rounded">timestamp</code>, <code class="bg-slate-100 px-1 rounded">actor</code>, and <code class="bg-slate-100 px-1 rounded">incident</code> (full snapshot with comments).</p>
+</div>
 {% endblock %}

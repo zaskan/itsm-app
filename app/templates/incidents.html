@@ -86,11 +86,10 @@
           {% endif %}
         </td>
         <td class="px-4 py-4">
-          <button type="button" data-ref="{{ row.public_id }}"
-            class="detail-trigger text-left group">
+          <a href="/incidents/{{ row.public_id }}" class="detail-link text-left group block">
             <div class="text-primary font-medium group-hover:underline">{{ row.title }}</div>
             <div class="text-slate-500 text-xs mt-0.5 line-clamp-2">{{ row.description }}</div>
-          </button>
+          </a>
         </td>
         <td class="px-4 py-4 text-xs text-slate-600">
           {% if row.linked_name %}
@@ -111,7 +110,9 @@
           <div data-relative="{{ row.created_at }}">{{ row.created_at }}</div>
           <div class="text-slate-400">{{ row.created_at }}</div>
         </td>
-        <td class="px-4 py-4 font-mono text-xs text-slate-600">{{ row.public_id }}</td>
+        <td class="px-4 py-4 font-mono text-xs text-slate-600">
+          <a href="/incidents/{{ row.public_id }}" class="text-primary hover:underline">{{ row.public_id }}</a>
+        </td>
       </tr>
       {% else %}
       <tr>
@@ -171,15 +172,6 @@
   </div>
 </div>
 
-<!-- Detail modal -->
-<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-  <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col relative">
-    <button type="button" class="absolute top-4 right-4 z-10 text-slate-400 hover:text-slate-600 text-2xl leading-none"
-      onclick="document.getElementById('detail-modal').classList.add('hidden')">&times;</button>
-    <div id="detail-modal-body" class="overflow-y-auto p-6"></div>
-  </div>
-</div>
-
 <script>
   function formatRelative(iso) {
     try {
@@ -193,16 +185,6 @@
   }
   document.querySelectorAll('[data-relative]').forEach(el => {
     el.textContent = formatRelative(el.getAttribute('data-relative'));
-  });
-  document.querySelectorAll('.detail-trigger').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const ref = btn.getAttribute('data-ref');
-      const box = document.getElementById('detail-modal-body');
-      box.innerHTML = '<p class="text-slate-500 text-sm">Loading…</p>';
-      document.getElementById('detail-modal').classList.remove('hidden');
-      const r = await fetch('/incidents/' + encodeURIComponent(ref));
-      box.innerHTML = await r.text();
-    });
   });
 </script>
 {% endblock %}

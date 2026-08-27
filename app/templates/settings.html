@@ -4,6 +4,7 @@
 {% block page_heading %}Settings{% endblock %}
 
 {% block content %}
+<div class="nx-page-content nx-page-content--narrow">
 {% if purged %}
 <div class="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
   All application data was deleted. Admin account(s) and default settings were restored.
@@ -16,19 +17,19 @@
 <div class="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ purge_error }}</div>
 {% endif %}
 
-<p class="text-slate-600 text-sm mb-6">Branding &amp; appearance: custom title, logotype, and sidebar colors. Admin only. Changes apply to all users (stored on the server).</p>
+<p class="text-slate-600 text-sm mb-6">Branding &amp; appearance: custom title, logotype, and Next Experience header colors. Admin only. Changes apply to all users (stored on the server).</p>
 
 <section class="mb-8">
   <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Branding &amp; appearance</h2>
 
-  <div class="space-y-8 max-w-2xl">
+  <div class="space-y-8">
     <!-- Application title -->
     <div class="bg-white rounded-xl border border-slate-200 p-6">
       <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Application title</h3>
       <form method="post" action="/settings/application-title" class="flex flex-wrap items-end gap-3">
         <div class="flex-1 min-w-[200px]">
           <label class="text-sm font-medium text-slate-700">Application title</label>
-          <input name="app_title" value="{{ current_title | e }}" required
+          <input name="app_title" value="{{ current_title | e }}" placeholder="Optional"
             class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </div>
         <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover">Apply title</button>
@@ -38,7 +39,7 @@
     <!-- Logotype -->
     <div class="bg-white rounded-xl border border-slate-200 p-6">
       <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-1">Logotype</h3>
-      <p class="text-xs text-slate-500 mb-3">Show in sidebar and sign-in</p>
+      <p class="text-xs text-slate-500 mb-3">Shown in the header and on the sign-in page</p>
       <form method="post" action="/settings/branding/logo" enctype="multipart/form-data" class="space-y-4">
         <div>
           <label class="text-sm font-medium text-slate-700">Built-in or custom</label>
@@ -61,18 +62,19 @@
       </form>
     </div>
 
-    <!-- Sidebar colors -->
+    <!-- Header / chrome colors -->
     <div class="bg-white rounded-xl border border-slate-200 p-6">
-      <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Sidebar colors</h3>
+      <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-1">Header colors</h3>
+      <p class="text-xs text-slate-500 mb-3">Next Experience unified navigation (header). Default is dark teal.</p>
       <form method="post" action="/settings/branding/colors" class="space-y-4">
         <div class="flex flex-wrap gap-6">
           <div>
-            <label class="text-sm font-medium text-slate-700">Menu background</label>
+            <label class="text-sm font-medium text-slate-700">Header background</label>
             <input type="color" name="sidebar_background" value="{{ branding.sidebar_background }}"
               class="mt-1 h-10 w-28 rounded border border-slate-300 cursor-pointer" />
           </div>
           <div>
-            <label class="text-sm font-medium text-slate-700">Menu text</label>
+            <label class="text-sm font-medium text-slate-700">Header text</label>
             <input type="color" name="sidebar_text" value="{{ branding.sidebar_text }}"
               class="mt-1 h-10 w-28 rounded border border-slate-300 cursor-pointer" />
           </div>
@@ -80,7 +82,7 @@
         <div class="flex flex-wrap gap-2">
           {% for key, pair in branding_presets.items() %}
           <button type="submit" formaction="/settings/branding/preset" name="preset" value="{{ key }}"
-            class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 capitalize">{{ key }}</button>
+            class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">{{ pair.label | default(key | capitalize) }}</button>
           {% endfor %}
         </div>
         <div class="flex flex-wrap gap-3 items-center">
@@ -94,15 +96,96 @@
   </div>
 </section>
 
-<section class="mb-8 max-w-2xl">
+<section class="mb-8">
+  <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Knowledge Base repository</h2>
+  <div class="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+    <p class="text-sm text-slate-600">
+      Import articles from Markdown files in a directory (supports YAML front matter with <span class="font-mono text-xs">title</span>).
+      Repo-sourced articles are updated on sync; articles you create in the UI or API are kept separately.
+    </p>
+    {% if kb_synced and kb_sync_stats %}
+    <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+      Sync complete: {{ kb_sync_stats.created }} created, {{ kb_sync_stats.updated }} updated,
+      {{ kb_sync_stats.deleted }} removed.
+      {% if kb_sync_stats.errors %}
+      <ul class="mt-2 list-disc pl-5 text-red-700">
+        {% for err in kb_sync_stats.errors %}<li>{{ err }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endif %}
+    <form method="post" action="/settings/kb-repo" class="space-y-4">
+      <div>
+        <label class="text-sm font-medium text-slate-700">Repository URL</label>
+        <input name="repo_url" value="{{ kb_repo.repo_url | e }}"
+          placeholder="https://github.com/org/kb-articles.git"
+          class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
+        <p class="text-xs text-slate-500 mt-1">
+          Optional Git URL. When set, it is cloned on sync and overrides the local root path below.
+          Install-time env: <span class="font-mono">ITSM_KB_REPO_URL</span>
+        </p>
+      </div>
+      <div>
+        <label class="text-sm font-medium text-slate-700">Repository root path</label>
+        <input name="repo_root" value="{{ kb_repo.repo_root | e }}"
+          placeholder="/app/kb-repo"
+          class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
+        <p class="text-xs text-slate-500 mt-1">
+          Used when no URL is configured. Install-time env: <span class="font-mono">ITSM_KB_REPO</span>
+        </p>
+      </div>
+      <div>
+        <label class="text-sm font-medium text-slate-700">Subpath within repository</label>
+        <input name="repo_subpath" value="{{ kb_repo.repo_subpath | e }}"
+          placeholder="articles"
+          class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono" />
+        <p class="text-xs text-slate-500 mt-1">Optional. Install-time env: <span class="font-mono">ITSM_KB_REPO_PATH</span></p>
+      </div>
+      <label class="flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="ignore_ssl" value="1"
+          {% if kb_repo.ignore_ssl %}checked{% endif %}
+          class="mt-0.5 rounded border-slate-300" />
+        <span>
+          Ignore SSL certificate validation when cloning or fetching the Git repository
+          <span class="block text-xs text-slate-500 mt-0.5">
+            Use only for internal repos with self-signed certificates.
+            Install-time env: <span class="font-mono">ITSM_KB_REPO_IGNORE_SSL</span>
+          </span>
+        </span>
+      </label>
+      {% if kb_repo.resolved_path %}
+      <p class="text-xs text-slate-500">
+        Resolved scan path
+        {% if kb_repo.source == 'git' %}(from Git checkout){% endif %}:
+        <span class="font-mono">{{ kb_repo.resolved_path }}</span>
+        {% if kb_repo.path_exists %}(found){% else %}(not found){% endif %}
+      </p>
+      {% endif %}
+      {% if kb_repo.last_sync %}
+      <p class="text-xs text-slate-500">Last sync: {{ kb_repo.last_sync }}</p>
+      {% endif %}
+      <div class="flex flex-wrap gap-3">
+        <button type="submit" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Save configuration
+        </button>
+        <button type="submit" name="sync_now" value="1"
+          class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium hover:bg-primary-hover">
+          Save &amp; sync now
+        </button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="mb-8">
   <h2 class="text-sm font-semibold text-red-600 uppercase tracking-wide mb-3">Danger zone</h2>
   <div class="rounded-xl border-2 border-red-300 bg-red-50/50 p-6 space-y-4">
     <p class="text-sm text-slate-800 font-medium">Delete all application data</p>
     <p class="text-sm text-slate-600">
       Permanently removes all incidents, assets, knowledge base articles, service requests, changes, tasks,
       templates, custom fields, webhooks, branding settings, and non-admin users.
-      <strong class="text-slate-800">Admin account(s) are kept.</strong> Default title and branding are restored.
-      This cannot be undone.
+      <strong class="text-slate-800">Admin account(s) are kept.</strong> Default title, branding, demo content,
+      and KB repository sync are restored. This cannot be undone.
     </p>
     <form method="post" action="/settings/purge-data" class="space-y-3" id="purge-form"
       onsubmit="return confirm('This will permanently delete all data except admin users. Continue?');">
@@ -133,4 +216,5 @@
     });
   })();
 </script>
+</div>
 {% endblock %}

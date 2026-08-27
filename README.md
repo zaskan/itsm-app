@@ -20,7 +20,7 @@ Single-process FastAPI app with SQLite: **incidents**, **service requests (REQ/R
 | Knowledge Base       | Articles for documentation and linking from closed incidents. Optional **semantic search** via MCP `rag_search_kb` when `ITSM_EMBEDDING_`* is set (OpenAI-compatible `/v1/embeddings`); new and updated articles are indexed automatically. Run `scripts/reindex_kb_embeddings.py` once to backfill existing rows. |
 | Assets               | Name, description, optional assigned user, asset type, **custom fields** per asset type; optional **Include in external inventory** flag for Ansible and other dynamic inventories; all authenticated users may manage assets.                                                                                     |
 | Asset types          | Admin: classification catalog with **custom field definitions**. Nested under Assets in the UI (collapsible).                                                                                                                                                                                                      |
-| Settings             | Admin: **branding** (title, built-in or custom logotype, sidebar colors with Navy/Slate/Forest/Wine/Bronze/Light presets) in `app_settings` and optional uploads under `app/static/uploads/branding/`. API: `GET`/`PATCH` `/api/v1/settings/branding`, `POST` `.../logo` (multipart), `DELETE` `.../logo`          |
+| Settings             | Admin: **branding** (title, built-in or custom logotype, Next Experience header colors with Polaris/Navy/Slate/Forest/Wine/Bronze/Light presets) in `app_settings` and optional uploads under `ITSM_UPLOAD_DIR` (default: next to the SQLite file, e.g. `/data/uploads/branding/`). Default chrome is Polaris (`#1d1e4b`). API: `GET`/`PATCH` `/api/v1/settings/branding`, `POST` `.../logo` (multipart), `DELETE` `.../logo`          |
 | Webhooks             | Multiple outbound URLs stored in `outbound_webhooks`; **GET** list readable by any authenticated user; **POST** / **PATCH** / **DELETE** admin-only (UI under Webhook config).                                                                                                                                     |
 | Users                | Admin CRUD; cannot remove/demote the last administrator (guards in UI and API).                                                                                                                                                                                                                                    |
 | MCP                  | Tools for incidents, KB, assets, templates, custom fields, requests, changes, tasks; optional bearer token.                                                                                                                                                                                                        |
@@ -47,7 +47,16 @@ Single-process FastAPI app with SQLite: **incidents**, **service requests (REQ/R
 | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SESSION_SECRET`                                              | Secret for signed browser sessions (required in production).                                                                                                                                             |
 | `ITSM_DATABASE`                                               | SQLite path (default: `./data/itsm.db`).                                                                                                                                                                 |
+| `ITSM_UPLOAD_DIR`                                             | Directory served at `/static/uploads` for custom logos (default: `<sqlite-parent>/uploads`). On OpenShift this is `/data/uploads` on the same PVC as the database.                                       |
+| `ITSM_KB_REPO`                                                | Root path of the Markdown knowledge-base repository (synced on startup). Default in the container image: `/app/kb-repo`. Ignored when a repository URL is configured.                                     |
+| `ITSM_KB_REPO_URL`                                            | Optional Git repository URL. When set (via env or Settings), the app clones it on sync and uses that checkout instead of `ITSM_KB_REPO`. Checkout is cached under `<sqlite-parent>/kb-repo-git` or `ITSM_KB_REPO_CACHE`. |
+| `ITSM_KB_REPO_PATH`                                           | Optional subdirectory within the repository to scan (default in image: `articles`).                                                                                                                      |
+| `ITSM_KB_REPO_CACHE`                                          | Optional override for the local Git checkout directory used with `ITSM_KB_REPO_URL`.                                                                                                                   |
+| `ITSM_KB_REPO_IGNORE_SSL`                                     | Set to `1` to disable Git SSL verification when cloning/fetching (`http.sslVerify=false`). Can also be toggled in Settings.                                                                              |
+| `ITSM_SKIP_DEFAULT_SEED`                                      | Set to `1` to skip automatic demo content seeding (used in tests).                                                                                                                                       |
+| `ITSM_SKIP_KB_REPO_SYNC`                                      | Set to `1` to skip KB repository sync on startup (used in tests).                                                                                                                                        |
 | `ITSM_BOOTSTRAP_ADMIN_USER` / `ITSM_BOOTSTRAP_ADMIN_PASSWORD` | First admin when the DB has zero users.                                                                                                                                                                  |
+| `ITSM_SEED_AIOPS_PASSWORD`                                    | Password for the default `aiops` automation user created on first startup (default: `aiops`). Set empty to skip creating that user.                                                                      |
 | `ITSM_BOOTSTRAP_ADMIN`                                        | Alternative: `username:password` single string.                                                                                                                                                          |
 | `MCP_TOKEN`                                                   | Optional shared secret (you define the value). If set, MCP requires `X-ITSM-MCP-Token` or `Authorization: Bearer`. See [MCP token](#mcp-token-create-and-configure).                                     |
 | `MCP_ALLOWED_HOSTS`                                           | Optional comma-separated `Host` values for MCP DNS rebinding protection. **Unset by default** so MCP works behind OpenShift/ingress with a public hostname. Set only if you need strict host allowlists. |
@@ -71,6 +80,34 @@ python scripts/reindex_kb_embeddings.py
 ```
 
 Use MCP tool `**rag_search_kb**` for natural-language queries; `**search_kb**` remains substring search on title and description.
+
+### Default content (first startup)
+
+On the first start with an empty database, the app automatically seeds **catalog defaults** (no sample incidents, assets, or KB articles):
+
+- Users: `aiops` (role `user`, MCP token) when `ITSM_SEED_AIOPS_PASSWORD` is set (default `aiops`)
+- Asset types: **Virtual Machine**, **Generic Application** (with custom fields)
+- 10 AAP task templates, 3 standard change templates, 3 request templates (Generic Application Stack, Modify VM CPUs/Memory)
+
+You can still create, edit, and delete all objects via the UI, REST API, and MCP. Re-seed manually with `python scripts/seed_example_data.py --force`.
+
+`POST /api/v1/settings/purge-data` restores this catalog after a factory reset.
+
+### Knowledge Base from Markdown repository
+
+KB articles are imported from `.md` files in a configured directory or Git repository (YAML front matter with `title`, or the first `#` heading, or the filename). The image ships with an empty `kb-repo/articles/` directory; add Markdown files there, point `ITSM_KB_REPO` at a local path, or set a Git URL.
+
+| Setting | Env var | Example |
+| ------- | ------- | ------- |
+| Repository URL | `ITSM_KB_REPO_URL` | `https://github.com/org/kb-articles.git` |
+| Repository root | `ITSM_KB_REPO` | `/app/kb-repo` |
+| Subpath | `ITSM_KB_REPO_PATH` | `articles` |
+
+When a URL is configured (install-time or in Settings), it takes precedence over the local root path. Configure at install time via env vars, or later in **Settings → Knowledge Base repository** (admin). Use **Save & sync now** to re-import.
+
+- Repo-sourced articles are keyed by file path and updated on each sync.
+- Articles you create via UI/API are kept separately; editing them detaches them from the repo.
+- API: `GET/PATCH /api/v1/settings/kb-repo`, `POST /api/v1/settings/kb-repo/sync`
 
 ### Demo / test data
 
@@ -125,6 +162,7 @@ podman run --rm -p 8000:8000 \
   -e ITSM_BOOTSTRAP_ADMIN_USER=admin \
   -e ITSM_BOOTSTRAP_ADMIN_PASSWORD=admin \
   -e ITSM_DATABASE=/data/itsm.db \
+  -e ITSM_UPLOAD_DIR=/data/uploads \
   -v itsm-data:/data \
   itsm-app:latest
 ```
@@ -143,7 +181,7 @@ Prerequisites: `oc login` to your cluster, permission to create projects/resourc
   ```
    Or: `oc apply -f k8s/namespace.yaml` then `oc project itsm-app`.
 2. **Secrets**
-  Edit [k8s/secret.yaml](k8s/secret.yaml): `session-secret`, `mcp-token`, and optionally `bootstrap-admin-user` / `bootstrap-admin-password` (used only when the database file has **no users** — typical first pod start with `emptyDir`).
+  Edit [k8s/secret.yaml](k8s/secret.yaml): `session-secret`, `mcp-token`, and optionally `bootstrap-admin-user` / `bootstrap-admin-password` (used only when the database file has **no users** — typical first pod start on an empty PVC).
 3. **Build image in-cluster** (binary build from your workstation):
   ```bash
    cd /path/to/itsm-app
@@ -153,6 +191,7 @@ Prerequisites: `oc login` to your cluster, permission to create projects/resourc
    Confirm the ImageStream name/tag (`oc get is -n itsm-app`). If it does not match [k8s/deployment.yaml](k8s/deployment.yaml) (`image-registry.openshift-image-registry.svc:5000/itsm-app/itsm-app:latest`), patch the Deployment image or use `oc tag` so the Deployment pulls your build.
 4. **Deploy**
   ```bash
+   oc apply -f k8s/pvc.yaml
    oc apply -f k8s/deployment.yaml
    oc apply -f k8s/service.yaml
    oc apply -f k8s/route.yaml
@@ -166,12 +205,23 @@ Prerequisites: `oc login` to your cluster, permission to create projects/resourc
 
 **Notes**
 
-- The sample Deployment uses **emptyDir** for `/data`; SQLite is ephemeral across node moves unless you add a PersistentVolumeClaim.
+- SQLite lives on PVC `itsm-data` mounted at `/data` (`ITSM_DATABASE=/data/itsm.db`, custom logos in `ITSM_UPLOAD_DIR=/data/uploads`). Keep **replicas: 1**. The Deployment uses `strategy: Recreate` so a rollout does not try to attach the same `ReadWriteOnce` volume to two pods.
 - Bootstrap env vars apply only when `users` count is zero; after that, manage users in the UI or API.
+- **Existing emptyDir data is lost on the first rollout to the PVC.** Copy it out first if you need it:
+  ```bash
+   POD=$(oc get pod -n itsm-app -l app=itsm-app -o jsonpath='{.items[0].metadata.name}')
+   oc cp -n itsm-app "${POD}:/data/itsm.db" ./itsm.db
+  ```
+  After the PVC-backed pod is Ready, copy it back and restart:
+  ```bash
+   POD=$(oc get pod -n itsm-app -l app=itsm-app -o jsonpath='{.items[0].metadata.name}')
+   oc cp -n itsm-app ./itsm.db "${POD}:/data/itsm.db"
+   oc rollout restart deployment/itsm-app -n itsm-app
+  ```
 
 ## Plain Kubernetes
 
-Same manifests minus Route; use [k8s/ingress.example.yaml](k8s/ingress.example.yaml) or your ingress controller. Apply `namespace`, `secret`, `deployment`, `service`.
+Same manifests minus Route; use [k8s/ingress.example.yaml](k8s/ingress.example.yaml) or your ingress controller. Apply `namespace`, `secret`, `pvc`, `deployment`, `service`.
 
 ## REST API (`/api/v1`)
 

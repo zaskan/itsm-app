@@ -66,7 +66,8 @@ def build_mcp() -> FastMCP:
         instructions=(
             "Tools for ITSM incidents, service requests (REQ/RITM), changes (CHG/CTASK), tasks, "
             "request/change/task templates, knowledge base, asset types, and assets. "
-            "Workflow: create request from template, submit_request to auto-create CHG/CTASK; "
+            "Workflow: create_request with a template auto-submits (creates CHG/CTASK, status in_progress); "
+            "without a template, create a draft then submit_request when ready. "
             "complete CTASKs sequentially to fulfill RITM/REQ. "
             "For KB: prefer rag_search_kb for natural-language questions. "
             "Authenticate with a per-user MCP token (Users admin) or shared MCP_TOKEN env. "
@@ -298,7 +299,13 @@ def build_mcp() -> FastMCP:
     def list_request_templates() -> str:
         return json.dumps(rtpl_svc.list_request_templates(), indent=2)
 
-    @mcp.tool(name="get_request_template", description="Get request template by id or name (spaces as hyphens).")
+    @mcp.tool(
+        name="get_request_template",
+        description=(
+            "Get request template by id or name. Name may use spaces, hyphens, or commas "
+            "(e.g. Generic Application Stack / Generic-Application-Stack / Generic,Application,Stack)."
+        ),
+    )
     def get_request_template(template_ref: str) -> str:
         item = rtpl_svc.resolve_request_template(template_ref)
         if not item:
@@ -413,41 +420,63 @@ def build_mcp() -> FastMCP:
 
     @mcp.tool(
         name="create_request",
-        description="Create a draft service request; optional template id or name (spaces as hyphens).",
+        description=(
+            "Create a service request; optional template id or name "
+            "(spaces, hyphens, or commas: Generic-Application-Stack or Generic,Application,Stack). "
+            "Pass specifications_json as an object of template custom-field values "
+            "(keys = field_key) when using a template. "
+            "With a template, the request is submitted automatically (status in_progress, CHG/CTASK created). "
+            "Without a template, the request stays draft until submit_request."
+        ),
     )
     def create_request(
         name: str = "",
         description: str = "",
         request_template_id: int | str | None = None,
+        specifications_json: dict | None = None,
     ) -> str:
         actor_user_id = _resolve_actor()
         try:
+            specs = specifications_json or {}
+            if not isinstance(specs, dict):
+                raise ValueError("specifications_json must be a JSON object")
             snap = req_svc.create_request(
                 requester_user_id=actor_user_id,
                 name=name,
                 description=description,
                 request_template_id=request_template_id,
+                specifications=specs if request_template_id is not None else None,
             )
+            if request_template_id is not None and request_template_id != "":
+                snap = wf_svc.submit_request(snap["public_id"], actor_user_id)
         except ValueError as e:
             return json.dumps({"error": str(e)})
         return json.dumps(snap, indent=2)
 
-    @mcp.tool(name="add_ritm", description="Add requested item to a draft request from template id or name.")
+    @mcp.tool(
+        name="add_ritm",
+        description=(
+            "Add requested item to a draft request from template id or name "
+            "(spaces, hyphens, or commas allowed)."
+        ),
+    )
     def add_ritm(
         request_ref: str,
         request_template_id: int | str | None = None,
-        specifications_json: str = "{}",
+        specifications_json: dict | None = None,
     ) -> str:
         actor_user_id = _resolve_actor()
         try:
-            specs = json.loads(specifications_json or "{}")
+            specs = specifications_json or {}
+            if not isinstance(specs, dict):
+                raise ValueError("specifications_json must be a JSON object")
             row = req_svc.add_ritm_to_request(
                 request_ref,
                 request_template_id=request_template_id,
                 specifications=specs,
                 actor_user_id=actor_user_id,
             )
-        except (ValueError, json.JSONDecodeError) as e:
+        except ValueError as e:
             return json.dumps({"error": str(e)})
         return json.dumps(row, indent=2)
 

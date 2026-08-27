@@ -4,7 +4,8 @@
 {% block page_heading %}Standard change templates{% endblock %}
 
 {% block content %}
-<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 max-w-3xl">
+<div class="nx-page-content nx-page-content--narrow">
+<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 w-full">
   <h3 class="text-sm font-semibold text-slate-800 mb-3">Add change template</h3>
   <form method="post" action="/change-templates/new" class="space-y-3">
     <input name="name" required placeholder="Name" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
@@ -28,7 +29,7 @@
   </form>
 </div>
 
-<div class="space-y-4 max-w-3xl">
+<div class="space-y-4">
   {% for item in templates %}
   <div class="bg-white rounded-xl border border-slate-200 p-4">
     <h3 class="font-semibold text-slate-900">{{ item.name }}</h3>
@@ -51,5 +52,6 @@
   {% else %}
   <p class="text-sm text-slate-500">No change templates yet.</p>
   {% endfor %}
+</div>
 </div>
 {% endblock %}

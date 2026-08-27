@@ -101,7 +101,18 @@ def get_task_detail(task_ref: str | int) -> dict[str, Any] | None:
         task = _get_ctask_row(cur, task_ref)
         if not task:
             return None
-        return _task_out(cur, task)
+        out = _task_out(cur, task)
+        events = we_svc.list_events_for_record("task", out["id"])
+        if out.get("change_id"):
+            change_events = we_svc.list_events_for_record("change", out["change_id"])
+            pid = out["public_id"]
+            for event in change_events:
+                payload = event.get("payload") or {}
+                if payload.get("ctask_public_id") == pid:
+                    events.append(event)
+            events.sort(key=lambda e: e.get("created_at") or "")
+        out["events"] = events
+        return out
 
 
 def _resolve_template_fields(
@@ -344,3 +355,56 @@ def complete_task(
         )
         cur.execute("SELECT * FROM change_tasks WHERE id = ?", (task["id"],))
         return _task_out(cur, dict(cur.fetchone()))
+
+
+TASK_STATE_LABELS: dict[str, str] = {
+    "blocked": "Blocked",
+    "pending": "Pending",
+    "in_progress": "Work in Progress",
+    "completed": "Closed Complete",
+}
+
+
+def _task_activity_lines(event: dict[str, Any]) -> list[str]:
+    from app.services.record_ui import default_event_lines
+
+    et = event.get("event_type") or ""
+    payload = event.get("payload") or {}
+    if et == "created":
+        tid = payload.get("ctask_public_id")
+        return [f"Task created: {tid}"] if tid else ["Task created"]
+    if et == "started":
+        return ["State: Work in Progress was Pending"]
+    if et == "completed":
+        comment = (payload.get("completion_comment") or "").strip()
+        lines = ["State: Closed Complete"]
+        if comment:
+            lines.append(comment)
+        return lines
+    if et == "ctask_started":
+        return ["State: Work in Progress was Pending"]
+    if et == "ctask_completed":
+        comment = (payload.get("completion_comment") or "").strip()
+        lines = ["State: Closed Complete"]
+        if comment:
+            lines.append(comment)
+        return lines
+    if et == "task_created":
+        tid = payload.get("ctask_public_id")
+        return [f"Task added: {tid}"] if tid else ["Task added"]
+    return default_event_lines(event)
+
+
+def present_task(detail: dict[str, Any]) -> dict[str, Any]:
+    from app.services.record_ui import build_activities, format_sn_datetime, status_label
+
+    events = detail.get("events", [])
+    status = detail.get("status", "")
+    return {
+        **detail,
+        "display_number": detail.get("public_id", ""),
+        "state_label": TASK_STATE_LABELS.get(status, status_label(status)),
+        "opened_display": format_sn_datetime(detail.get("created_at")),
+        "completed_display": format_sn_datetime(detail.get("completed_at")),
+        "activities": build_activities(events, _task_activity_lines),
+    }

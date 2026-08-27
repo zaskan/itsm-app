@@ -542,3 +542,58 @@ def mark_change_completed(change_id: int, actor_user_id: int) -> dict[str, Any]:
     detail = get_change_detail(change_id)
     assert detail is not None
     return detail
+
+
+CHANGE_STATE_LABELS: dict[str, str] = {
+    "draft": "Draft",
+    "pending_approval": "Pending Approval",
+    "approved": "Approved",
+    "implementing": "Implement",
+    "completed": "Completed",
+    "cancelled": "Cancelled",
+}
+
+
+def _change_activity_lines(event: dict[str, Any]) -> list[str]:
+    from app.services.record_ui import default_event_lines
+
+    et = event.get("event_type") or ""
+    payload = event.get("payload") or {}
+    if et == "created":
+        ctype = payload.get("change_type")
+        return [f"Change type: {ctype}"] if ctype else ["Change created"]
+    if et == "pending_approval":
+        return ["State: Pending Approval"]
+    if et == "approved":
+        return ["State: Approved"]
+    if et == "completed":
+        return ["State: Completed"]
+    if et == "cancelled":
+        return ["State: Cancelled"]
+    if et == "ctask_started":
+        tid = payload.get("ctask_public_id")
+        return [f"Task started: {tid}"] if tid else ["Task started"]
+    if et == "ctask_completed":
+        tid = payload.get("ctask_public_id")
+        return [f"Task completed: {tid}"] if tid else ["Task completed"]
+    if et == "task_created":
+        tid = payload.get("ctask_public_id")
+        return [f"Task created: {tid}"] if tid else ["Task created"]
+    return default_event_lines(event)
+
+
+def present_change(detail: dict[str, Any]) -> dict[str, Any]:
+    from app.services.record_ui import build_activities, format_sn_datetime, status_label
+
+    events = detail.get("events", [])
+    status = detail.get("status", "")
+    cid = int(detail["id"])
+    return {
+        **detail,
+        "display_number": f"CHG{cid:07d}",
+        "state_label": CHANGE_STATE_LABELS.get(status, status_label(status)),
+        "opened_display": format_sn_datetime(detail.get("created_at")),
+        "approved_display": format_sn_datetime(detail.get("approved_at")),
+        "type_label": status_label(detail.get("change_type")),
+        "activities": build_activities(events, _change_activity_lines),
+    }

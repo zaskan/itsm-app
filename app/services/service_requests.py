@@ -123,7 +123,27 @@ def list_requests(
     """
     with db.cursor() as cur:
         cur.execute(sql, params)
-        return [dict(r) for r in cur.fetchall()]
+        rows = [dict(r) for r in cur.fetchall()]
+        for row in rows:
+            cur.execute(
+                """
+                SELECT ri.request_template_id, rt.name AS request_template_name
+                FROM requested_items ri
+                LEFT JOIN request_templates rt ON rt.id = ri.request_template_id
+                WHERE ri.request_id = ? AND ri.request_template_id IS NOT NULL
+                ORDER BY ri.id ASC
+                LIMIT 1
+                """,
+                (row["id"],),
+            )
+            tpl = cur.fetchone()
+            if tpl:
+                row["request_template_id"] = tpl["request_template_id"]
+                row["request_template_name"] = tpl["request_template_name"]
+            else:
+                row["request_template_id"] = None
+                row["request_template_name"] = None
+        return rows
 
 
 def create_request(
@@ -600,3 +620,58 @@ def list_ritms_by_request_id(request_id: int) -> list[dict[str, Any]]:
             (request_id,),
         )
         return [_ritm_out(cur, dict(r)) for r in cur.fetchall()]
+
+
+REQUEST_STATE_LABELS: dict[str, str] = {
+    "draft": "Draft",
+    "submitted": "Submitted",
+    "in_progress": "In Progress",
+    "fulfilled": "Fulfilled",
+    "closed": "Closed",
+    "cancelled": "Cancelled",
+}
+
+
+def _request_activity_lines(event: dict[str, Any]) -> list[str]:
+    from app.services.record_ui import default_event_lines
+
+    et = event.get("event_type") or ""
+    payload = event.get("payload") or {}
+    if et == "created":
+        name = payload.get("name")
+        return [f"Short description: {name}"] if name else ["Request created"]
+    if et == "ritm_added":
+        ritm = payload.get("ritm_public_id") or payload.get("public_id")
+        return [f"Requested item added: {ritm}"] if ritm else ["Requested item added"]
+    if et == "comment_added":
+        preview = (payload.get("comment_preview") or "").strip()
+        return [preview] if preview else ["Comment added"]
+    if et == "submitted":
+        return ["State: Submitted was Draft"]
+    if et == "closed":
+        return ["State: Closed"]
+    if et == "cancelled":
+        return ["State: Cancelled"]
+    if et == "fulfilled":
+        return ["State: Fulfilled"]
+    if et == "kb_assigned":
+        title = payload.get("kb_title")
+        return [f"Knowledge article assigned: {title}"] if title else ["Knowledge article assigned"]
+    return default_event_lines(event)
+
+
+def present_request(detail: dict[str, Any]) -> dict[str, Any]:
+    from app.services.record_ui import build_activities, format_sn_datetime, status_label
+
+    events = detail.get("events", [])
+    status = detail.get("status", "")
+    return {
+        **detail,
+        "display_number": detail.get("public_id", ""),
+        "state_label": REQUEST_STATE_LABELS.get(status, status_label(status)),
+        "opened_display": format_sn_datetime(detail.get("created_at")),
+        "submitted_display": format_sn_datetime(detail.get("submitted_at")),
+        "closed_display": format_sn_datetime(detail.get("closed_at")),
+        "activities": build_activities(events, _request_activity_lines),
+    }
+

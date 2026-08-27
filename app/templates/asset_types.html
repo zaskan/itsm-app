@@ -11,13 +11,14 @@
 {% endblock %}
 
 {% block content %}
+<div class="nx-page-content nx-page-content--narrow">
 {% if request.query_params.get('error') == '1' %}
 <p class="text-sm text-red-600 mb-4">Could not create type (name may already exist).</p>
 {% elif request.query_params.get('error') == 'fk' %}
 <p class="text-sm text-red-600 mb-4">Delete failed: assets still reference this type.</p>
 {% endif %}
 
-<div id="new-type" class="hidden mb-6 p-4 bg-white rounded-xl border border-slate-200 max-w-lg">
+<div id="new-type" class="hidden mb-6 p-4 bg-white rounded-xl border border-slate-200 w-full">
   <h3 class="text-sm font-semibold text-slate-800 mb-3">New asset type</h3>
   <form method="post" action="/asset-types/new" class="space-y-3">
     <input name="name" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Name" />
@@ -26,7 +27,7 @@
   </form>
 </div>
 
-<div class="space-y-4 max-w-3xl">
+<div class="space-y-4">
   {% for t in types %}
   <div class="bg-white rounded-xl border border-slate-200 p-4">
     <form method="post" action="/asset-types/{{ t.id }}/edit" class="space-y-3">
@@ -44,5 +45,6 @@
   {% else %}
   <p class="text-slate-500 text-sm">No asset types yet.</p>
   {% endfor %}
+</div>
 </div>
 {% endblock %}

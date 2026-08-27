@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from datetime import date, datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -24,6 +25,7 @@ from app.services import custom_fields as cf_svc
 from app.services import incidents as inc_svc
 from app.services import inventory as inv_svc
 from app.services import kb as kb_svc
+from app.services import kb_repo as kb_repo_svc
 from app.services import branding as branding_svc
 from app.services import data_purge as data_purge_svc
 from app.services import request_templates as rtpl_svc
@@ -94,14 +96,35 @@ def root() -> RedirectResponse:
     return RedirectResponse("/incidents", status_code=302)
 
 
+@router.get("/search")
+def global_search(request: Request, q: str = "") -> RedirectResponse:
+    """Route unified-nav search to the matching list, by record prefix when possible."""
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
+    raw = (q or "").strip()
+    key = raw.upper()
+    dest = "/incidents"
+    if key.startswith(("REQ-", "RITM-")):
+        dest = "/requests"
+    elif key.startswith(("CHG-", "CTASK-")):
+        dest = "/changes"
+    elif key.startswith("TASK-"):
+        dest = "/tasks"
+    qs = f"?q={quote(raw)}" if raw else ""
+    return RedirectResponse(dest + qs, status_code=302)
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request,
     purged: str | None = None,
     error: str | None = None,
+    kb_synced: str | None = None,
 ) -> HTMLResponse:
     me = require_admin_session(request)
     b = branding_svc.get_branding()
+    kb_sync_stats = request.session.pop("kb_sync_stats", None)
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -110,6 +133,9 @@ def settings_page(
             me,
             current_title=b["app_title"],
             branding_presets=branding_svc.PRESETS,
+            kb_repo=kb_repo_svc.kb_repo_settings_dict(),
+            kb_synced=kb_synced == "1",
+            kb_sync_stats=kb_sync_stats,
             purged=purged == "1",
             purge_error=error or "",
         ),
@@ -119,7 +145,7 @@ def settings_page(
 @router.post("/settings/application-title")
 def settings_save_title(
     request: Request,
-    app_title: str = Form(...),
+    app_title: str = Form(""),
 ) -> RedirectResponse:
     require_admin_session(request)
     settings_svc.set_app_title(app_title)
@@ -187,6 +213,29 @@ def settings_branding_reset_title_logo(request: Request) -> RedirectResponse:
 def settings_branding_reset_colors(request: Request) -> RedirectResponse:
     require_admin_session(request)
     branding_svc.reset_sidebar_colors()
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/settings/kb-repo")
+def settings_kb_repo(
+    request: Request,
+    repo_url: str = Form(""),
+    repo_root: str = Form(""),
+    repo_subpath: str = Form(""),
+    ignore_ssl: str = Form(""),
+    sync_now: str = Form(""),
+) -> RedirectResponse:
+    require_admin_session(request)
+    kb_repo_svc.set_kb_repo_config(
+        url=repo_url,
+        root=repo_root,
+        subpath=repo_subpath,
+        ignore_ssl=ignore_ssl == "1",
+    )
+    if sync_now == "1":
+        stats = kb_repo_svc.sync_from_repo()
+        request.session["kb_sync_stats"] = stats
+        return RedirectResponse("/settings?kb_synced=1", status_code=303)
     return RedirectResponse("/settings", status_code=303)
 
 
@@ -293,33 +342,37 @@ def incidents_new(
     wh_svc.schedule_incident_webhook(
         background_tasks, "created", me["username"], snap
     )
-    return RedirectResponse("/incidents", status_code=303)
+    return RedirectResponse(f"/incidents/{snap['public_id']}", status_code=303)
 
 
 @router.get("/incidents/{incident_ref}", response_class=HTMLResponse)
-def incident_detail_fragment(
+def incident_detail(
     request: Request,
     incident_ref: str,
 ) -> HTMLResponse:
     user = get_session_user(request)
     if not user:
         raise login_redirect()
-    d = inc_svc.get_incident_detail(incident_ref)
-    if not d:
+    raw = inc_svc.get_incident_detail(incident_ref)
+    if not raw:
         raise HTTPException(404, "Not found")
+    incident = inc_svc.present_incident(raw)
     inventory_rows = inv_svc.list_inventory()
     kb_articles = kb_svc.list_articles()
-    return templates.TemplateResponse(
+    ctx = _page(
         request,
-        "incident_detail_fragment.html",
-        _page(
-            request,
-            user,
-            incident=d,
-            inventory_items=inventory_rows,
-            kb_articles=kb_articles,
-        ),
+        user,
+        incident=incident,
+        inventory_items=inventory_rows,
+        kb_articles=kb_articles,
+        urgency_labels=inc_svc.URGENCY_LABELS,
     )
+    template = (
+        "incident_detail_fragment.html"
+        if request.headers.get("HX-Request") == "true"
+        else "incident_detail.html"
+    )
+    return templates.TemplateResponse(request, template, ctx)
 
 
 @router.post("/incidents/{incident_ref}/asset")
@@ -353,7 +406,7 @@ def incident_asset(
     wh_svc.schedule_incident_webhook(
         background_tasks, "asset_linked", me["username"], snap
     )
-    return RedirectResponse("/incidents", status_code=303)
+    return RedirectResponse(f"/incidents/{incident_ref}", status_code=303)
 
 
 @router.post("/incidents/{incident_ref}/comment")
@@ -373,7 +426,7 @@ def incident_comment(
     wh_svc.schedule_incident_webhook(
         background_tasks, "comment_added", me["username"], snap
     )
-    return RedirectResponse("/incidents", status_code=303)
+    return RedirectResponse(f"/incidents/{incident_ref}", status_code=303)
 
 
 @router.post("/incidents/{incident_ref}/severity")
@@ -393,7 +446,7 @@ def incident_severity(
     wh_svc.schedule_incident_webhook(
         background_tasks, "severity_changed", me["username"], snap
     )
-    return RedirectResponse("/incidents", status_code=303)
+    return RedirectResponse(f"/incidents/{incident_ref}", status_code=303)
 
 
 @router.post("/incidents/{incident_ref}/close")
@@ -423,7 +476,7 @@ def incident_close(
     wh_svc.schedule_incident_webhook(
         background_tasks, "closed", me["username"], snap
     )
-    return RedirectResponse("/incidents", status_code=303)
+    return RedirectResponse(f"/incidents/{incident_ref}", status_code=303)
 
 
 @router.post("/incidents/{incident_ref}/delete")
@@ -449,16 +502,54 @@ def incident_delete(
 def kb_page(
     request: Request,
     q: str | None = None,
-    open: int | None = Query(None, alias="open"),
+    sort: str = "newest",
+    source: str = "all",
 ) -> HTMLResponse:
     user = get_session_user(request)
     if not user:
         raise login_redirect()
-    articles = kb_svc.list_articles(q=q)
+    sort_key = "alpha" if sort == "alpha" else "newest"
+    source_key = source if source in ("repo", "manual") else "all"
+    articles = [
+        kb_svc.present_article(a)
+        for a in kb_svc.list_articles(q=q, sort=sort_key, source=source_key)
+    ]
     return templates.TemplateResponse(
         request,
         "kb.html",
-        _page(request, user, articles=articles, q=q or "", open_article_id=open),
+        _page(
+            request,
+            user,
+            articles=articles,
+            q=q or "",
+            sort=sort_key,
+            source=source_key,
+        ),
+    )
+
+
+@router.get("/kb/{article_id}", response_class=HTMLResponse)
+def kb_article_page(
+    request: Request,
+    article_id: int,
+    edit: str | None = None,
+) -> HTMLResponse:
+    user = get_session_user(request)
+    if not user:
+        raise login_redirect()
+    art = kb_svc.get_article(article_id)
+    if not art:
+        raise HTTPException(404, "Not found")
+    return templates.TemplateResponse(
+        request,
+        "kb_article.html",
+        _page(
+            request,
+            user,
+            article=kb_svc.present_article(art),
+            related=kb_svc.related_articles(article_id),
+            editing=edit == "1",
+        ),
     )
 
 
@@ -471,8 +562,8 @@ def kb_new(
     me = get_session_user(request)
     if not me:
         raise login_redirect()
-    kb_svc.create_article(title.strip(), description.strip())
-    return RedirectResponse("/kb", status_code=303)
+    created = kb_svc.create_article(title.strip(), description.strip())
+    return RedirectResponse(f"/kb/{created['id']}", status_code=303)
 
 
 @router.post("/kb/{article_id}/edit")
@@ -481,18 +572,12 @@ def kb_edit(
     article_id: int,
     title: str = Form(...),
     description: str = Form(""),
-    q: str = Form(""),
 ) -> RedirectResponse:
     me = get_session_user(request)
     if not me:
         raise login_redirect()
     kb_svc.update_article(article_id, title.strip(), description.strip())
-    params = f"open={article_id}"
-    if q.strip():
-        from urllib.parse import quote
-
-        params = f"q={quote(q.strip())}&{params}"
-    return RedirectResponse(f"/kb?{params}", status_code=303)
+    return RedirectResponse(f"/kb/{article_id}", status_code=303)
 
 
 @router.post("/kb/{article_id}/delete")
@@ -924,35 +1009,38 @@ async def requests_new(
         from urllib.parse import quote
 
         return RedirectResponse(f"/requests?error={quote(str(e))}", status_code=303)
-    return RedirectResponse("/requests", status_code=303)
+    return RedirectResponse(f"/requests/{snap['public_id']}", status_code=303)
 
 
 @router.get("/requests/{request_ref}", response_class=HTMLResponse)
-def request_detail_fragment(request: Request, request_ref: str) -> HTMLResponse:
+def request_detail(request: Request, request_ref: str) -> HTMLResponse:
     user = get_session_user(request)
     if not user:
         raise login_redirect()
-    detail = req_svc.get_request_detail(request_ref)
-    if not detail:
+    raw = req_svc.get_request_detail(request_ref)
+    if not raw:
         raise HTTPException(404, "Not found")
+    service_request = req_svc.present_request(raw)
     catalog = rtpl_svc.list_request_templates()
     template_fields = {
         str(t["id"]): cf_svc.list_definitions("request_template", t["id"])
         for t in catalog
     }
     kb_articles = kb_svc.list_articles()
-    return templates.TemplateResponse(
+    ctx = _page(
         request,
-        "request_detail_fragment.html",
-        _page(
-            request,
-            user,
-            service_request=detail,
-            request_templates=catalog,
-            template_fields=template_fields,
-            kb_articles=kb_articles,
-        ),
+        user,
+        service_request=service_request,
+        request_templates=catalog,
+        template_fields=template_fields,
+        kb_articles=kb_articles,
     )
+    template = (
+        "request_detail_fragment.html"
+        if request.headers.get("HX-Request") == "true"
+        else "request_detail.html"
+    )
+    return templates.TemplateResponse(request, template, ctx)
 
 
 @router.post("/requests/{request_ref}/ritm")
@@ -978,7 +1066,7 @@ async def request_add_ritm(
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return RedirectResponse("/requests", status_code=303)
+    return RedirectResponse(f"/requests/{request_ref}", status_code=303)
 
 
 @router.post("/requests/{request_ref}/submit")
@@ -997,7 +1085,7 @@ def request_submit(
     wh_svc.schedule_workflow_webhook(
         background_tasks, "request", "submitted", me["username"], snap
     )
-    return RedirectResponse("/requests", status_code=303)
+    return RedirectResponse(f"/requests/{request_ref}", status_code=303)
 
 
 @router.post("/requests/{request_ref}/cancel")
@@ -1016,7 +1104,7 @@ def request_cancel(
     wh_svc.schedule_workflow_webhook(
         background_tasks, "request", "cancelled", me["username"], snap
     )
-    return RedirectResponse("/requests", status_code=303)
+    return RedirectResponse(f"/requests/{request_ref}", status_code=303)
 
 
 @router.post("/requests/{request_ref}/comment")
@@ -1036,7 +1124,7 @@ def request_comment_ui(
     wh_svc.schedule_workflow_webhook(
         background_tasks, "request", "comment_added", me["username"], snap
     )
-    return RedirectResponse("/requests", status_code=303)
+    return RedirectResponse(f"/requests/{request_ref}", status_code=303)
 
 
 @router.post("/requests/{request_ref}/resolution-kb")
@@ -1058,7 +1146,7 @@ def request_resolution_kb_ui(
     wh_svc.schedule_workflow_webhook(
         background_tasks, "request", "kb_assigned", me["username"], snap
     )
-    return RedirectResponse("/requests", status_code=303)
+    return RedirectResponse(f"/requests/{request_ref}", status_code=303)
 
 
 @router.post("/requests/{request_ref}/close")
@@ -1082,7 +1170,7 @@ def request_close_ui(
     wh_svc.schedule_workflow_webhook(
         background_tasks, "request", "closed", me["username"], snap
     )
-    return RedirectResponse("/requests", status_code=303)
+    return RedirectResponse(f"/requests/{request_ref}", status_code=303)
 
 
 @router.get("/changes", response_class=HTMLResponse)
@@ -1121,18 +1209,21 @@ def changes_page(
 
 
 @router.get("/changes/{change_ref}", response_class=HTMLResponse)
-def change_detail_fragment(request: Request, change_ref: str) -> HTMLResponse:
+def change_detail(request: Request, change_ref: str) -> HTMLResponse:
     user = get_session_user(request)
     if not user:
         raise login_redirect()
-    detail = chg_svc.get_change_detail(change_ref)
-    if not detail:
+    raw = chg_svc.get_change_detail(change_ref)
+    if not raw:
         raise HTTPException(404, "Not found")
-    return templates.TemplateResponse(
-        request,
-        "change_detail_fragment.html",
-        _page(request, user, change=detail),
+    change = chg_svc.present_change(raw)
+    ctx = _page(request, user, change=change)
+    template = (
+        "change_detail_fragment.html"
+        if request.headers.get("HX-Request") == "true"
+        else "change_detail.html"
     )
+    return templates.TemplateResponse(request, template, ctx)
 
 
 @router.post("/changes/{change_ref}/approve")
@@ -1149,7 +1240,7 @@ def change_approve(
     wh_svc.schedule_workflow_webhook(
         background_tasks, "change", "approved", me["username"], snap
     )
-    return RedirectResponse("/changes", status_code=303)
+    return RedirectResponse(f"/changes/{change_ref}", status_code=303)
 
 
 @router.post("/changes/{change_ref}/tasks/{ctask_ref}/start")
@@ -1161,7 +1252,7 @@ def ctask_start_ui(request: Request, change_ref: str, ctask_ref: str) -> Redirec
         chg_svc.start_ctask(change_ref, ctask_ref, me["id"])
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return RedirectResponse("/changes", status_code=303)
+    return RedirectResponse(f"/changes/{change_ref}", status_code=303)
 
 
 @router.post("/changes/{change_ref}/tasks/{ctask_ref}/complete")
@@ -1184,7 +1275,7 @@ def ctask_complete_ui(
     wh_svc.schedule_workflow_webhook(
         background_tasks, "change", "ctask_completed", me["username"], snap
     )
-    return RedirectResponse("/changes", status_code=303)
+    return RedirectResponse(f"/changes/{change_ref}", status_code=303)
 
 
 @router.post("/tasks/{task_ref}/start")
@@ -1196,7 +1287,7 @@ def task_start_ui(request: Request, task_ref: str) -> RedirectResponse:
         task_svc.start_task(task_ref, me["id"])
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return RedirectResponse("/tasks", status_code=303)
+    return RedirectResponse(f"/tasks/{task_ref}", status_code=303)
 
 
 @router.post("/tasks/{task_ref}/complete")
@@ -1212,7 +1303,7 @@ def task_complete_ui(
         task_svc.complete_task(task_ref, me["id"], completion_comment=completion_comment)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    return RedirectResponse("/tasks", status_code=303)
+    return RedirectResponse(f"/tasks/{task_ref}", status_code=303)
 
 
 @router.post("/changes/new")
@@ -1249,7 +1340,7 @@ async def changes_new_ui(
         from urllib.parse import quote
 
         return RedirectResponse(f"/changes?error={quote(str(e))}", status_code=303)
-    return RedirectResponse("/changes", status_code=303)
+    return RedirectResponse(f"/changes/{snap['public_id']}", status_code=303)
 
 
 @router.get("/tasks", response_class=HTMLResponse)
@@ -1289,18 +1380,21 @@ def tasks_page(
 
 
 @router.get("/tasks/{task_ref}", response_class=HTMLResponse)
-def task_detail_fragment(request: Request, task_ref: str) -> HTMLResponse:
+def task_detail(request: Request, task_ref: str) -> HTMLResponse:
     user = get_session_user(request)
     if not user:
         raise login_redirect()
-    detail = task_svc.get_task_detail(task_ref)
-    if not detail:
+    raw = task_svc.get_task_detail(task_ref)
+    if not raw:
         raise HTTPException(404, "Not found")
-    return templates.TemplateResponse(
-        request,
-        "task_detail_fragment.html",
-        _page(request, user, task=detail),
+    task = task_svc.present_task(raw)
+    ctx = _page(request, user, task=task)
+    template = (
+        "task_detail_fragment.html"
+        if request.headers.get("HX-Request") == "true"
+        else "task_detail.html"
     )
+    return templates.TemplateResponse(request, template, ctx)
 
 
 @router.post("/tasks/new")
@@ -1321,7 +1415,7 @@ def tasks_new_ui(
     uid = int(assigned_user_id) if assigned_user_id.isdigit() else None
     cref = change_ref.strip() or None
     try:
-        task_svc.create_task(
+        snap = task_svc.create_task(
             change_ref=cref,
             title=title.strip(),
             description=description.strip(),
@@ -1332,7 +1426,7 @@ def tasks_new_ui(
         )
     except ValueError:
         return RedirectResponse("/tasks?error=1", status_code=303)
-    return RedirectResponse("/tasks", status_code=303)
+    return RedirectResponse(f"/tasks/{snap['public_id']}", status_code=303)
 
 
 @router.get("/request-templates", response_class=HTMLResponse)

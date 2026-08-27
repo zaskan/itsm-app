@@ -4,9 +4,10 @@
 {% block page_heading %}Service request templates{% endblock %}
 
 {% block content %}
+<div class="nx-page-content nx-page-content--narrow">
 <p class="text-slate-600 text-sm mb-6">Define request templates with custom fields and linked standard change templates.</p>
 
-<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 max-w-3xl">
+<div class="mb-8 p-4 bg-white rounded-xl border border-slate-200 w-full">
   <h3 class="text-sm font-semibold text-slate-800 mb-3">Add request template</h3>
   <form method="post" action="/request-templates/new" class="space-y-3">
     <input name="name" required placeholder="Name" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
@@ -22,7 +23,7 @@
   </form>
 </div>
 
-<div class="space-y-4 max-w-3xl">
+<div class="space-y-4">
   {% for item in templates %}
   <div class="bg-white rounded-xl border border-slate-200 p-4">
     <div class="flex justify-between gap-3">
@@ -46,5 +47,6 @@
   {% else %}
   <p class="text-sm text-slate-500">No request templates yet.</p>
   {% endfor %}
+</div>
 </div>
 {% endblock %}

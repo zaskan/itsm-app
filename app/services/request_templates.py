@@ -42,23 +42,37 @@ def get_request_template(template_id: int) -> dict[str, Any] | None:
         return _row_out(dict(row)) if row else None
 
 
-def resolve_request_template(ref: str | int) -> dict[str, Any] | None:
-    """Resolve by numeric id or by name with spaces replaced by hyphens.
+def _slugify_template_ref(ref: str) -> str:
+    """Normalize name refs so spaces, commas, underscores, and hyphens match."""
+    s = str(ref).strip().casefold()
+    for ch in (" ", ",", "_"):
+        s = s.replace(ch, "-")
+    while "--" in s:
+        s = s.replace("--", "-")
+    return s.strip("-")
 
-    Example: name ``New Linux Virtual Machine`` → ref ``New-Linux-Virtual-Machine``.
+
+def resolve_request_template(ref: str | int) -> dict[str, Any] | None:
+    """Resolve by numeric id, exact name, or slug (spaces/commas → hyphens).
+
+    Examples for name ``Generic Application Stack``:
+    ``1``, ``Generic Application Stack``, ``Generic-Application-Stack``,
+    ``Generic,Application,Stack``.
     """
     if isinstance(ref, int) or (isinstance(ref, str) and ref.strip().isdigit()):
         return get_request_template(int(ref))
     slug = str(ref).strip()
     if not slug:
         return None
+    target = _slugify_template_ref(slug)
     with db.cursor() as cur:
-        cur.execute(
-            "SELECT * FROM request_templates WHERE REPLACE(name, ' ', '-') = ?",
-            (slug,),
-        )
-        row = cur.fetchone()
-        return _row_out(dict(row)) if row else None
+        cur.execute("SELECT * FROM request_templates")
+        for row in cur.fetchall():
+            d = dict(row)
+            name = d.get("name") or ""
+            if name == slug or _slugify_template_ref(name) == target:
+                return _row_out(d)
+    return None
 
 
 def create_request_template(

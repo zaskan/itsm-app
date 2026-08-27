@@ -80,19 +80,37 @@ def test_resolve_request_template_by_name_slug() -> None:
     with TestClient(main_mod.app) as client:
         assert client.get("/healthz").status_code == 200
         tpl = rtpl_svc.create_request_template(
-            name="New Linux Virtual Machine",
+            name="Resolve Test VM Request",
             description="Provision a Linux VM",
             change_template_id=None,
             require_standard_change=False,
         )
         by_id = rtpl_svc.resolve_request_template(tpl["id"])
-        by_slug = rtpl_svc.resolve_request_template("New-Linux-Virtual-Machine")
+        by_slug = rtpl_svc.resolve_request_template("Resolve-Test-VM-Request")
+        by_name = rtpl_svc.resolve_request_template("Resolve Test VM Request")
+        by_commas = rtpl_svc.resolve_request_template("Resolve,Test,VM,Request")
+        by_case = rtpl_svc.resolve_request_template("resolve-test-vm-request")
         assert by_id is not None and by_slug is not None
-        assert by_id["id"] == by_slug["id"] == tpl["id"]
+        assert by_name is not None and by_commas is not None and by_case is not None
+        assert (
+            by_id["id"]
+            == by_slug["id"]
+            == by_name["id"]
+            == by_commas["id"]
+            == by_case["id"]
+            == tpl["id"]
+        )
         assert rtpl_svc.resolve_request_template("no-such-template") is None
 
         r = client.get(
-            "/api/v1/request-templates/New-Linux-Virtual-Machine",
+            "/api/v1/request-templates/Resolve-Test-VM-Request",
+            auth=AUTH,
+        )
+        assert r.status_code == 200
+        assert r.json()["id"] == tpl["id"]
+
+        r = client.get(
+            "/api/v1/request-templates/Resolve,Test,VM,Request",
             auth=AUTH,
         )
         assert r.status_code == 200
@@ -333,3 +351,88 @@ def test_mcp_actor_is_token_owner(
         monkeypatch.delenv("MCP_TOKEN", raising=False)
         os.environ["ITSM_DATABASE"] = default_db
         importlib.reload(main_mod)
+
+
+def test_mcp_create_request_with_specifications_json() -> None:
+    import app.main as main_mod
+
+    importlib.reload(main_mod)
+    with TestClient(main_mod.app) as client:
+        assert client.get("/healthz").status_code == 200
+        tr = client.post(
+            "/api/v1/request-templates",
+            auth=AUTH,
+            json={
+                "name": "VM Provision",
+                "description": "Provision a VM",
+                "require_standard_change": False,
+            },
+        )
+        assert tr.status_code == 201, tr.text
+        tpl_id = tr.json()["id"]
+
+        fr = client.post(
+            f"/api/v1/request-templates/{tpl_id}/fields",
+            auth=AUTH,
+            json={
+                "field_key": "hostname",
+                "label": "Hostname",
+                "field_type": "text",
+                "required": True,
+            },
+        )
+        assert fr.status_code == 201, fr.text
+
+        created = client.post(
+            "/api/v1/users",
+            auth=AUTH,
+            json={"username": "reqspecs", "password": "pass", "role": "admin"},
+        )
+        assert created.status_code == 201, created.text
+        headers = _mcp_headers(created.json()["mcp_token"])
+
+        client.post(
+            "/mcp/",
+            json=_rpc(
+                "initialize",
+                {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "pytest", "version": "0"},
+                },
+                1,
+            ),
+            headers=headers,
+        )
+        client.post(
+            "/mcp/",
+            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+            headers=headers,
+        )
+
+        r = client.post(
+            "/mcp/",
+            json=_rpc(
+                "tools/call",
+                {
+                    "name": "create_request",
+                    "arguments": {
+                        "name": "New VM",
+                        "description": "Need a host",
+                        "request_template_id": "VM-Provision",
+                        "specifications_json": {"hostname": "vm-01"},
+                    },
+                },
+                2,
+            ),
+            headers=headers,
+        )
+        assert r.status_code == 200
+        snap = json.loads(r.json()["result"]["content"][0]["text"])
+        assert "error" not in snap, snap
+        assert snap["status"] == "in_progress"
+        ritms = snap.get("ritms") or []
+        assert len(ritms) == 1
+        assert ritms[0]["specifications"].get("hostname") == "vm-01"
+        assert ritms[0].get("request_template_id")
+        assert snap.get("changes_created")

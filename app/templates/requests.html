@@ -41,20 +41,26 @@
         <th class="px-4 py-3 font-medium">Status</th>
         <th class="px-4 py-3 font-medium">Requester</th>
         <th class="px-4 py-3 font-medium">Name</th>
+        <th class="px-4 py-3 font-medium">Template</th>
         <th class="px-4 py-3 font-medium">Created</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
       {% for row in requests %}
-      <tr class="hover:bg-slate-50/80 cursor-pointer detail-trigger" data-ref="{{ row.public_id }}">
-        <td class="px-4 py-4 font-mono text-primary">{{ row.public_id }}</td>
+      <tr class="hover:bg-slate-50/80">
+        <td class="px-4 py-4 font-mono">
+          <a href="/requests/{{ row.public_id }}" class="text-primary hover:underline">{{ row.public_id }}</a>
+        </td>
         <td class="px-4 py-4">{{ row.status | replace('_',' ') | title }}</td>
         <td class="px-4 py-4">{{ row.requester_username }}</td>
-        <td class="px-4 py-4">{{ row.name or '—' }}</td>
+        <td class="px-4 py-4">
+          <a href="/requests/{{ row.public_id }}" class="text-slate-900 hover:text-primary hover:underline">{{ row.name or '—' }}</a>
+        </td>
+        <td class="px-4 py-4 text-slate-700">{{ row.request_template_name or '—' }}</td>
         <td class="px-4 py-4 text-slate-500">{{ row.created_at[:10] }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No requests yet.</td></tr>
+      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No requests yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -90,13 +96,6 @@
         <button type="button" onclick="document.getElementById('new-modal').classList.add('hidden')" class="rounded-lg border border-slate-300 px-4 py-2 text-sm">Cancel</button>
       </div>
     </form>
-  </div>
-</div>
-
-<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
-  <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full my-8 p-6 relative">
-    <button type="button" onclick="document.getElementById('detail-modal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-xl">&times;</button>
-    <div id="detail-modal-body"></div>
   </div>
 </div>
 
@@ -147,16 +146,5 @@ function onRequestTemplateChange() {
   if (hint) hint.classList.toggle('hidden', !tid);
   if (btn) btn.textContent = tid ? 'Create & submit' : 'Create draft';
 }
-
-document.querySelectorAll('.detail-trigger').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    const ref = btn.getAttribute('data-ref');
-    const box = document.getElementById('detail-modal-body');
-    box.innerHTML = '<p class="text-slate-500 text-sm">Loading…</p>';
-    document.getElementById('detail-modal').classList.remove('hidden');
-    const r = await fetch('/requests/' + encodeURIComponent(ref));
-    box.innerHTML = await r.text();
-  });
-});
 </script>
 {% endblock %}

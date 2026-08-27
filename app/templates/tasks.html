@@ -38,9 +38,14 @@
     </thead>
     <tbody class="divide-y">
       {% for row in tasks %}
-      <tr class="hover:bg-slate-50/80 cursor-pointer detail-trigger" data-ref="{{ row.public_id }}">
-        <td class="px-4 py-4 font-mono text-primary">{{ row.public_id }}<br/><span class="text-slate-700 font-sans">{{ row.title }}</span></td>
-        <td class="px-4 py-4 font-mono text-slate-600">{{ row.change_public_id or '—' }}</td>
+      <tr class="hover:bg-slate-50/80">
+        <td class="px-4 py-4">
+          <a href="/tasks/{{ row.public_id }}" class="font-mono text-primary hover:underline">{{ row.public_id }}</a><br/>
+          <a href="/tasks/{{ row.public_id }}" class="text-slate-700 hover:text-primary hover:underline">{{ row.title }}</a>
+        </td>
+        <td class="px-4 py-4 font-mono text-slate-600">
+          {% if row.change_public_id %}<a href="/changes/{{ row.change_public_id }}" class="text-primary hover:underline">{{ row.change_public_id }}</a>{% else %}—{% endif %}
+        </td>
         <td class="px-4 py-4">{{ row.status | replace('_',' ') | title }}</td>
         <td class="px-4 py-4">{{ row.assigned_username or '—' }}</td>
         <td class="px-4 py-4 text-slate-600">{{ row.kb_article_title or '—' }}</td>
@@ -84,24 +89,4 @@
     </form>
   </div>
 </div>
-
-<div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
-  <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full my-8 p-6 relative">
-    <button type="button" onclick="document.getElementById('detail-modal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 text-xl">&times;</button>
-    <div id="detail-modal-body"></div>
-  </div>
-</div>
-
-<script>
-  document.querySelectorAll('.detail-trigger').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const ref = btn.getAttribute('data-ref');
-      const box = document.getElementById('detail-modal-body');
-      box.innerHTML = '<p class="text-slate-500 text-sm">Loading…</p>';
-      document.getElementById('detail-modal').classList.remove('hidden');
-      const r = await fetch('/tasks/' + encodeURIComponent(ref));
-      box.innerHTML = await r.text();
-    });
-  });
-</script>
 {% endblock %}
