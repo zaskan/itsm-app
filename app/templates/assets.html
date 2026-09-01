@@ -1,343 +1,295 @@
 {% extends "base.html" %}
 {% set active_nav = 'assets' %}
 {% block title %}Assets — {{ app_title }}{% endblock %}
-{% block page_heading %}Assets{% endblock %}
+{% block page_heading %}Asset estate{% endblock %}
 
 {% block header_actions %}
-<button type="button" onclick="document.getElementById('new-item').classList.remove('hidden')"
+<button type="button" onclick="location.reload()" class="assets-toolbar-btn" title="Refresh" aria-label="Refresh">
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" /></svg>
+</button>
+<button type="button" onclick="document.getElementById('assets-filter').classList.toggle('hidden')" class="assets-toolbar-btn" title="Filter" aria-label="Filter">
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" /></svg>
+</button>
+<button type="button" onclick="document.getElementById('new-modal').classList.remove('hidden')"
   class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow hover:bg-primary-hover">
-  + New asset
+  New
 </button>
 {% endblock %}
 
 {% block content %}
-<div class="nx-page-content">
-<style>
-  .inv-field { margin-bottom: 1.25rem; }
-  .inv-field:last-child { margin-bottom: 0; }
-  .inv-label {
-    display: block;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #334155;
-    margin-bottom: 0.375rem;
-  }
-  .inv-hint {
-    display: block;
-    font-size: 0.75rem;
-    color: #64748b;
-    margin-top: 0.25rem;
-    line-height: 1.4;
-  }
-  .inv-input {
-    width: 100%;
-    border-radius: 0.5rem;
-    border: 1px solid var(--nx-form-border, #68838b);
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-    color: #0f172a;
-    background: #fff;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  }
-  .inv-input:focus {
-    outline: none;
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-  }
-  .inv-section {
-    border: 1px solid #e2e8f0;
-    border-radius: 0.75rem;
-    padding: 1.25rem 1.5rem;
-    background: #f8fafc;
-  }
-  .inv-section + .inv-section { margin-top: 1.25rem; }
-  .inv-section-title {
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: #475569;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #e2e8f0;
-  }
-  .inv-checkbox-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.625rem;
-    padding: 0.75rem 1rem;
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
-  }
-  .inv-checkbox-row input { margin-top: 0.2rem; }
-  .inv-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.75rem;
-    padding-top: 1.25rem;
-    margin-top: 1.25rem;
-    border-top: 1px solid #e2e8f0;
-  }
-  .inv-summary-desc {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .inv-item-expanded {
-    border-color: #93c5fd;
-    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.12);
-  }
-  .inv-form {
-    max-width: 42rem;
-  }
-  .inv-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #2563eb;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.375rem;
-    transition: background 0.15s ease, color 0.15s ease;
-  }
-  .inv-toggle:hover {
-    background: rgba(37, 99, 235, 0.08);
-    text-decoration: none;
-  }
-  .inv-toggle-chevron {
-    display: inline-block;
-    transition: transform 0.15s ease;
-    font-size: 0.625rem;
-  }
-  .inv-item-expanded .inv-toggle-chevron {
-    transform: rotate(90deg);
-  }
-</style>
+{% macro asset_tag(item) %}A{{ '%06d' | format(item.id) }}{% endmacro %}
+{% macro asset_hostname(item) %}{{ item.custom_fields.get('hostname') or item.hostname or '—' }}{% endmacro %}
+{% macro asset_state(item) %}
+  {% if item.assigned_user_id %}In use
+  {% elif item.external_inventory %}External
+  {% else %}Available{% endif %}
+{% endmacro %}
 
 {% if request.query_params.get('error') == '1' %}
-<p class="text-sm text-red-600 mb-4">Could not create asset (check required fields).</p>
+<p class="text-sm text-red-600 mb-4">Could not save asset (check required fields).</p>
 {% elif request.query_params.get('error') == 'fk' %}
 <p class="text-sm text-red-600 mb-4">Cannot delete: one or more incidents still reference this asset.</p>
 {% endif %}
 
-<form method="get" action="/assets" class="mb-6 flex flex-wrap gap-3 items-end">
-  <div class="flex-1 min-w-[12rem]">
-    <input type="search" name="q" value="{{ q }}" placeholder="Search name or description…" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+<div class="assets-subheader">
+  <div>
+    <h2 class="assets-subheader-title">
+      All assets
+      <span class="assets-count-badge">{{ items | length }}</span>
+    </h2>
+    <p class="assets-subheader-meta">Last refreshed just now</p>
   </div>
-  <label class="flex items-center gap-2 text-sm text-slate-700 pb-2">
+</div>
+
+<form id="assets-filter" method="get" action="/assets" class="assets-filter-bar{% if not q and not external_only %} hidden{% endif %}">
+  <div class="flex-1 min-w-[12rem]">
+    <label class="text-xs font-medium text-slate-500 uppercase tracking-wide">Search</label>
+    <input type="search" name="q" value="{{ q }}" placeholder="Name or description…"
+      class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white" />
+  </div>
+  <label class="flex items-center gap-2 text-sm text-slate-700 self-end pb-2">
     <input type="checkbox" name="external_only" value="1" {% if external_only %}checked{% endif %} />
     External inventory only
   </label>
-  <button type="submit" class="rounded-lg bg-slate-700 text-white px-4 py-2 text-sm">Search</button>
+  <button type="submit" class="rounded-lg bg-slate-700 text-white px-4 py-2 text-sm h-[38px] self-end">Apply</button>
 </form>
 
-<div id="new-item" class="hidden mb-6 bg-white rounded-xl border border-slate-200 shadow-sm w-full">
-  <div class="px-6 py-4 border-b border-slate-100">
-    <h3 class="text-base font-semibold text-slate-900">New asset</h3>
-    <p class="text-sm text-slate-500 mt-1">Add a new item to your inventory. Required fields are marked with *.</p>
+<div class="assets-table-wrap">
+  <div class="overflow-x-auto">
+    <table class="assets-table w-full text-left text-sm">
+      <thead>
+        <tr>
+          <th class="px-4 py-3 font-medium">Display name</th>
+          <th class="px-4 py-3 font-medium">Type</th>
+          <th class="px-4 py-3 font-medium">Asset tag</th>
+          <th class="px-4 py-3 font-medium">Hostname</th>
+          <th class="px-4 py-3 font-medium">Assigned to</th>
+          <th class="px-4 py-3 font-medium">Parent asset</th>
+          <th class="px-4 py-3 font-medium">State</th>
+          <th class="px-4 py-3 font-medium">Updated</th>
+          <th class="px-4 py-3 font-medium w-10" aria-hidden="true"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr class="assets-row" data-asset-id="{{ it.id }}">
+          <td class="px-4 py-3">
+            <button type="button" class="assets-display-name" onclick="openEditModal({{ it.id }})">
+              {{ asset_tag(it) }} — {{ it.name }}
+            </button>
+            {% if it.description %}
+            <div class="assets-desc">{{ it.description }}</div>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-slate-700">{{ it.asset_type_name or '—' }}</td>
+          <td class="px-4 py-3 font-mono text-xs text-slate-600">{{ asset_tag(it) }}</td>
+          <td class="px-4 py-3 text-slate-700">{{ asset_hostname(it) }}</td>
+          <td class="px-4 py-3">
+            {% if it.assigned_username %}
+            <span class="assets-link">{{ it.assigned_username }}</span>
+            {% else %}
+            <span class="text-slate-400">—</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3">
+            {% if it.parent_name %}
+            <span class="assets-link">{{ it.parent_name }}</span>
+            {% else %}
+            <span class="text-slate-400">—</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3">
+            {% set state = asset_state(it) %}
+            <span class="assets-state assets-state--{{ state | lower | replace(' ', '-') }}">{{ state }}</span>
+          </td>
+          <td class="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
+            <span data-relative="{{ it.updated_at }}">{{ it.updated_at }}</span>
+          </td>
+          <td class="px-4 py-3 text-right">
+            <button type="button" class="assets-row-menu" onclick="openEditModal({{ it.id }})" aria-label="Edit {{ it.name | e }}">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" /></svg>
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" class="px-4 py-12 text-center text-slate-500">No assets match your filters.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
-  <form method="post" action="/assets/new" class="p-6" id="new-asset-form">
-    <div class="inv-section">
-      <div class="inv-section-title">1. Basic information</div>
-      <div class="inv-field">
-        <label class="inv-label" for="new-name">Name *</label>
-        <input id="new-name" name="name" required class="inv-input" placeholder="e.g. prod-web-01" />
-      </div>
-      <div class="inv-field">
-        <label class="inv-label" for="new-description">Description *</label>
-        <textarea id="new-description" name="description" required rows="3" class="inv-input" placeholder="What is this asset used for?"></textarea>
-        <span class="inv-hint">A short summary helps others find and understand this asset.</span>
-      </div>
+</div>
+
+<!-- New asset modal -->
+<div id="new-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+    <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-2xl leading-none"
+      onclick="document.getElementById('new-modal').classList.add('hidden')">&times;</button>
+    <div class="px-6 py-4 border-b border-slate-100">
+      <h2 class="text-lg font-semibold text-slate-900">New asset</h2>
+      <p class="text-sm text-slate-500 mt-1">Add a new item to your inventory.</p>
     </div>
-    <div class="inv-section">
-      <div class="inv-section-title">2. Classification</div>
-      <div class="inv-field">
-        <label class="inv-label" for="new-asset-type">Asset type</label>
-        <select id="new-asset-type" name="asset_type_id" class="inv-input" onchange="renderCustomFields('new')">
-          <option value="">— None —</option>
-          {% for t in asset_types %}
-          <option value="{{ t.id }}">{{ t.name }}</option>
-          {% endfor %}
-        </select>
-        <span class="inv-hint">Optional. Selecting a type may reveal additional fields below.</span>
+    <form method="post" action="/assets/new" class="p-6 space-y-4" id="new-asset-form">
+      <div>
+        <label class="text-sm font-medium text-slate-700">Name *</label>
+        <input name="name" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. prod-web-01" />
       </div>
-      <div class="inv-field">
-        <label class="inv-label" for="new-parent">Parent asset</label>
-        <select id="new-parent" name="parent_asset_id" class="inv-input">
-          <option value="">— None —</option>
-          {% for a in all_assets %}
-          <option value="{{ a.id }}">{{ a.name }}</option>
-          {% endfor %}
-        </select>
-        <span class="inv-hint">Link this asset under another for nested inventory structures.</span>
+      <div>
+        <label class="text-sm font-medium text-slate-700">Description *</label>
+        <textarea name="description" required rows="3" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="What is this asset used for?"></textarea>
       </div>
-    </div>
-    <div class="inv-section">
-      <div class="inv-section-title">3. Assignment</div>
-      <div class="inv-field">
-        <label class="inv-label" for="new-user">Assigned user</label>
-        <select id="new-user" name="assigned_user_id" class="inv-input">
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm font-medium text-slate-700">Asset type</label>
+          <select id="new-asset-type" name="asset_type_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" onchange="renderCustomFields('new')">
+            <option value="">— None —</option>
+            {% for t in asset_types %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-sm font-medium text-slate-700">Parent asset</label>
+          <select name="parent_asset_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">— None —</option>
+            {% for a in all_assets %}
+            <option value="{{ a.id }}">{{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="text-sm font-medium text-slate-700">Assigned user</label>
+        <select name="assigned_user_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
           <option value="">— None —</option>
           {% for u in users %}
           <option value="{{ u.id }}">{{ u.username }}</option>
           {% endfor %}
         </select>
       </div>
-    </div>
-    <div class="inv-section">
-      <div class="inv-section-title">4. External integration</div>
-      <label class="inv-checkbox-row">
-        <input type="checkbox" name="external_inventory" value="1" />
-        <span>
-          <span class="text-sm font-medium text-slate-800">Include in external inventory</span>
-          <span class="inv-hint">Expose this asset via the external inventory API (e.g. Ansible).</span>
-        </span>
+      <label class="flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="external_inventory" value="1" class="mt-1" />
+        <span>Include in external inventory (e.g. Ansible)</span>
       </label>
-    </div>
-    <div id="new-custom-fields" class="inv-section hidden">
-      <div class="inv-section-title">Additional attributes</div>
-      <div id="new-custom-fields-body" class="space-y-0"></div>
-    </div>
-    <div class="inv-actions">
-      <button type="submit" class="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white shadow hover:bg-primary-hover">Create asset</button>
-      <button type="button" class="text-sm text-slate-600 hover:text-slate-900" onclick="document.getElementById('new-item').classList.add('hidden')">Cancel</button>
-    </div>
-  </form>
+      <div id="new-custom-fields" class="hidden space-y-3 pt-2 border-t border-slate-100">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Additional attributes</p>
+        <div id="new-custom-fields-body" class="space-y-3"></div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" class="px-4 py-2 text-sm text-slate-600"
+          onclick="document.getElementById('new-modal').classList.add('hidden')">Cancel</button>
+        <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium">Create</button>
+      </div>
+    </form>
+  </div>
 </div>
 
-<div class="space-y-3">
-  {% for it in items %}
-  <div class="inv-item bg-white rounded-xl border border-slate-200 shadow-sm" data-inv-id="{{ it.id }}">
-    <div class="flex justify-between items-start gap-4 px-5 py-4">
-      <div class="min-w-0 flex-1">
-        <h3 class="font-medium text-slate-900">{{ it.name }}</h3>
-        <p class="inv-summary-desc text-sm text-slate-600 mt-1">{{ it.description or '—' }}</p>
+<!-- Edit asset modal -->
+<div id="edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+    <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-2xl leading-none"
+      onclick="closeEditModal()">&times;</button>
+    <div class="px-6 py-4 border-b border-slate-100">
+      <h2 class="text-lg font-semibold text-slate-900" id="edit-modal-title">Edit asset</h2>
+      <p class="text-sm text-slate-500 mt-1" id="edit-modal-tag"></p>
+    </div>
+    {% for it in items %}
+    <form method="post" action="/assets/{{ it.id }}/edit" class="p-6 space-y-4 hidden edit-asset-form" id="edit-form-{{ it.id }}" data-asset-id="{{ it.id }}">
+      {% if q %}<input type="hidden" name="q" value="{{ q }}" />{% endif %}
+      {% if external_only %}<input type="hidden" name="external_only" value="1" />{% endif %}
+      <div>
+        <label class="text-sm font-medium text-slate-700">Name *</label>
+        <input name="name" value="{{ it.name }}" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </div>
-      <button type="button" data-inv-toggle aria-expanded="false"
-        class="inv-toggle shrink-0 pt-0.5">
-        <span data-inv-toggle-label>Expand</span>
-        <span class="inv-toggle-chevron" aria-hidden="true">▶</span>
-      </button>
-    </div>
-    <div class="inv-panel hidden border-t border-slate-100 px-5 py-5 bg-slate-50/50" data-inv-panel>
-      <form method="post" action="/assets/{{ it.id }}/edit" class="inv-form">
-        {% if q %}<input type="hidden" name="q" value="{{ q }}" />{% endif %}
-        {% if external_only %}<input type="hidden" name="external_only" value="1" />{% endif %}
-        <div class="inv-section">
-          <div class="inv-section-title">1. Basic information</div>
-          <div class="inv-field">
-            <label class="inv-label" for="name-{{ it.id }}">Name *</label>
-            <input id="name-{{ it.id }}" name="name" value="{{ it.name }}" required class="inv-input" />
-          </div>
-          <div class="inv-field">
-            <label class="inv-label" for="desc-{{ it.id }}">Description *</label>
-            <textarea id="desc-{{ it.id }}" name="description" required rows="3" class="inv-input">{{ it.description }}</textarea>
-            <span class="inv-hint">A short summary helps others find and understand this asset.</span>
-          </div>
-        </div>
-        <div class="inv-section">
-          <div class="inv-section-title">2. Classification</div>
-          <div class="inv-field">
-            <label class="inv-label" for="type-{{ it.id }}">Asset type</label>
-            <select id="type-{{ it.id }}" name="asset_type_id" class="inv-input"
-              onchange="renderEditCustomFields({{ it.id }}, this.value)">
-              <option value="">— None —</option>
-              {% for t in asset_types %}
-              <option value="{{ t.id }}" {% if t.id == it.asset_type_id %}selected{% endif %}>{{ t.name }}</option>
-              {% endfor %}
-            </select>
-            {% if it.asset_type_name %}
-            <span class="inv-hint">Current type: {{ it.asset_type_name }}</span>
-            {% endif %}
-          </div>
-          <div class="inv-field">
-            <label class="inv-label" for="parent-{{ it.id }}">Parent asset</label>
-            <select id="parent-{{ it.id }}" name="parent_asset_id" class="inv-input">
-              <option value="">— None —</option>
-              {% for a in all_assets %}
-              {% if a.id != it.id %}
-              <option value="{{ a.id }}" {% if a.id == it.parent_asset_id %}selected{% endif %}>{{ a.name }}</option>
-              {% endif %}
-              {% endfor %}
-            </select>
-            {% if it.parent_name %}
-            <span class="inv-hint">Current parent: {{ it.parent_name }}</span>
-            {% endif %}
-            {% if it.children_count %}
-            <span class="inv-hint">{{ it.children_count }} nested asset(s) depend on this item.</span>
-            {% endif %}
-          </div>
-        </div>
-        <div class="inv-section">
-          <div class="inv-section-title">3. Assignment</div>
-          <div class="inv-field">
-            <label class="inv-label" for="user-{{ it.id }}">Assigned user</label>
-            <select id="user-{{ it.id }}" name="assigned_user_id" class="inv-input">
-              <option value="">— None —</option>
-              {% for u in users %}
-              <option value="{{ u.id }}" {% if u.id == it.assigned_user_id %}selected{% endif %}>{{ u.username }}</option>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-        <div class="inv-section">
-          <div class="inv-section-title">4. External integration</div>
-          <label class="inv-checkbox-row">
-            <input type="checkbox" name="external_inventory" value="1" {% if it.external_inventory %}checked{% endif %} />
-            <span>
-              <span class="text-sm font-medium text-slate-800">Include in external inventory</span>
-              <span class="inv-hint">Expose this asset via the external inventory API (e.g. Ansible).</span>
-            </span>
-          </label>
-        </div>
-        {% set fields = type_fields.get(it.asset_type_id, []) if it.asset_type_id else [] %}
-        <div id="custom-fields-{{ it.id }}" class="inv-section{% if not fields %} hidden{% endif %}">
-          <div class="inv-section-title">5. Additional attributes</div>
-          <div id="custom-fields-body-{{ it.id }}">
-            {% for f in fields %}
-            <div class="inv-field">
-              <label class="inv-label" for="cf-{{ it.id }}-{{ f.field_key }}">{{ f.label }}{% if f.required %} *{% endif %}</label>
-              <input id="cf-{{ it.id }}-{{ f.field_key }}" name="cf_{{ f.field_key }}"
-                value="{{ it.custom_fields.get(f.field_key, '') }}" class="inv-input" />
-            </div>
+      <div>
+        <label class="text-sm font-medium text-slate-700">Description *</label>
+        <textarea name="description" required rows="3" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">{{ it.description }}</textarea>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm font-medium text-slate-700">Asset type</label>
+          <select name="asset_type_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            onchange="renderEditCustomFields({{ it.id }}, this.value)">
+            <option value="">— None —</option>
+            {% for t in asset_types %}
+            <option value="{{ t.id }}" {% if t.id == it.asset_type_id %}selected{% endif %}>{{ t.name }}</option>
             {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-sm font-medium text-slate-700">Parent asset</label>
+          <select name="parent_asset_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">— None —</option>
+            {% for a in all_assets %}
+            {% if a.id != it.id %}
+            <option value="{{ a.id }}" {% if a.id == it.parent_asset_id %}selected{% endif %}>{{ a.name }}</option>
+            {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="text-sm font-medium text-slate-700">Assigned user</label>
+        <select name="assigned_user_id" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="">— None —</option>
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if u.id == it.assigned_user_id %}selected{% endif %}>{{ u.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label class="flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="external_inventory" value="1" class="mt-1" {% if it.external_inventory %}checked{% endif %} />
+        <span>Include in external inventory (e.g. Ansible)</span>
+      </label>
+      {% set fields = type_fields.get(it.asset_type_id, []) if it.asset_type_id else [] %}
+      <div id="custom-fields-{{ it.id }}" class="{% if not fields %}hidden {% endif %}space-y-3 pt-2 border-t border-slate-100">
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Additional attributes</p>
+        <div id="custom-fields-body-{{ it.id }}" class="space-y-3">
+          {% for f in fields %}
+          <div>
+            <label class="text-sm font-medium text-slate-700">{{ f.label }}{% if f.required %} *{% endif %}</label>
+            <input name="cf_{{ f.field_key }}" value="{{ it.custom_fields.get(f.field_key, '') }}"
+              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           </div>
+          {% endfor %}
         </div>
-        <div class="inv-actions">
-          <button type="submit" class="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white shadow hover:bg-primary-hover">Save changes</button>
+      </div>
+      <div class="flex justify-between items-center pt-2 border-t border-slate-100">
+        <button type="button" class="text-sm text-red-600 hover:underline"
+          onclick="if(confirm('Remove this asset?')) document.getElementById('delete-form-{{ it.id }}').submit()">Delete asset</button>
+        <div class="flex gap-2">
+          <button type="button" class="px-4 py-2 text-sm text-slate-600" onclick="closeEditModal()">Cancel</button>
+          <button type="submit" class="rounded-lg bg-primary text-white px-4 py-2 text-sm font-medium">Save</button>
         </div>
-      </form>
-      <form method="post" action="/assets/{{ it.id }}/delete" class="mt-4 pt-4 border-t border-slate-100"
-        onsubmit="return confirm('Remove this asset?');">
-        <button type="submit" class="text-sm text-red-600 hover:underline">Delete asset</button>
-      </form>
-    </div>
+      </div>
+    </form>
+    <form method="post" action="/assets/{{ it.id }}/delete" id="delete-form-{{ it.id }}" class="hidden"></form>
+    {% endfor %}
   </div>
-  {% else %}
-  <p class="text-slate-500 text-center py-10 bg-white rounded-xl border border-slate-200">No assets yet.</p>
-  {% endfor %}
 </div>
 
 <script>
 const typeFields = {{ type_fields | tojson }};
-
-function fieldHtml(f, value) {
-  value = value || '';
-  return '<div class="inv-field"><label class="inv-label">' + escapeHtml(f.label) +
-    (f.required ? ' *' : '') + '</label><input name="cf_' + escapeHtml(f.field_key) +
-    '" value="' + escapeHtml(value) + '" class="inv-input" /></div>';
-}
+const assetNames = {
+  {% for it in items %}
+  {{ it.id }}: {{ it.name | tojson }},
+  {% endfor %}
+};
 
 function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
+function fieldHtml(f, value) {
+  value = value || '';
+  return '<div><label class="text-sm font-medium text-slate-700">' + escapeHtml(f.label) +
+    (f.required ? ' *' : '') + '</label><input name="cf_' + escapeHtml(f.field_key) +
+    '" value="' + escapeHtml(value) + '" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /></div>';
+}
+
 function renderCustomFields(prefix) {
-  const sel = document.getElementById(prefix + '-asset-type');
+  const sel = document.getElementById(prefix + '-asset-type') || document.querySelector('#' + prefix + '-modal select[name="asset_type_id"]');
   const section = document.getElementById(prefix + '-custom-fields');
   const box = document.getElementById(prefix + '-custom-fields-body');
   if (!sel || !section || !box) return;
@@ -365,43 +317,46 @@ function renderEditCustomFields(itemId, typeId) {
   }
 }
 
-(function () {
-  function setToggleState(item, expanded) {
-    const btn = item.querySelector('[data-inv-toggle]');
-    const panel = item.querySelector('[data-inv-panel]');
-    const label = item.querySelector('[data-inv-toggle-label]');
-    if (!btn || !panel) return;
-    if (expanded) {
-      panel.classList.remove('hidden');
-      item.classList.add('inv-item-expanded');
-      if (label) label.textContent = 'Collapse';
-      btn.setAttribute('aria-expanded', 'true');
-    } else {
-      panel.classList.add('hidden');
-      item.classList.remove('inv-item-expanded');
-      if (label) label.textContent = 'Expand';
-      btn.setAttribute('aria-expanded', 'false');
-    }
-  }
+function openEditModal(id) {
+  document.querySelectorAll('.edit-asset-form').forEach(function (f) { f.classList.add('hidden'); });
+  const form = document.getElementById('edit-form-' + id);
+  if (!form) return;
+  form.classList.remove('hidden');
+  const tag = 'A' + String(id).padStart(6, '0');
+  document.getElementById('edit-modal-title').textContent = assetNames[id] || 'Edit asset';
+  document.getElementById('edit-modal-tag').textContent = tag;
+  document.getElementById('edit-modal').classList.remove('hidden');
+}
 
-  document.querySelectorAll('.inv-item').forEach(function (item) {
-    const btn = item.querySelector('[data-inv-toggle]');
-    if (!btn) return;
-    btn.addEventListener('click', function () {
-      const panel = item.querySelector('[data-inv-panel]');
-      const expanded = panel && !panel.classList.contains('hidden');
-      setToggleState(item, !expanded);
-    });
-  });
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.add('hidden');
+}
 
-  var openId = {{ open_item_id | default(none) | tojson }};
-  if (openId) {
-    var target = document.querySelector('.inv-item[data-inv-id="' + openId + '"]');
-    if (target) setToggleState(target, true);
-  }
-})();
+function formatRelative(iso) {
+  try {
+    const d = new Date(iso);
+    const s = Math.floor((Date.now() - d) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + ' min ago';
+    if (s < 86400) return Math.floor(s / 3600) + ' hours ago';
+    return Math.floor(s / 86400) + ' days ago';
+  } catch { return iso; }
+}
+
+document.querySelectorAll('[data-relative]').forEach(function (el) {
+  el.textContent = formatRelative(el.getAttribute('data-relative'));
+});
+
+document.getElementById('new-modal')?.addEventListener('click', function (e) {
+  if (e.target === this) this.classList.add('hidden');
+});
+document.getElementById('edit-modal')?.addEventListener('click', function (e) {
+  if (e.target === this) closeEditModal();
+});
+
+var openId = {{ open_item_id | default(none) | tojson }};
+if (openId) openEditModal(openId);
 
 renderCustomFields('new');
 </script>
-</div>
 {% endblock %}
